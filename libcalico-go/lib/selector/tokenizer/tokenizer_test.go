@@ -121,6 +121,10 @@ var tokenTests = []struct {
 	{`label starts foo "value"`, nil},
 	{`label ends foo "value"`, nil},
 	{`label squiggles "value"`, nil},
+	{`shared(calico/k8s_ns)`, []tokenizer.Token{
+		{tokenizer.TokHas, "calico/k8s_ns"},
+		{tokenizer.TokEOF, nil},
+	}},
 	{`a not in "bar" && !has(foo) || b in c`, []tokenizer.Token{
 		{tokenizer.TokLabel, "a"},
 		{tokenizer.TokNotIn, nil},
