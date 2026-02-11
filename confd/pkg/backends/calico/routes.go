@@ -190,45 +190,19 @@ func (rg *routeGenerator) getServiceForEndpoints(ep *discoveryv1.EndpointSlice) 
 
 // getEndpointsForService retrieves the corresponding ep for the given svc
 func (rg *routeGenerator) getEndpointsForService(svc *v1.Service) ([]*discoveryv1.EndpointSlice, string) {
-	var eps []*discoveryv1.EndpointSlice
 	key, err := cache.MetaNamespaceKeyFunc(svc)
 	if err != nil {
 		log.WithField("svc", svc.Name).WithError(err).Warn("getEndpointsForService: error on retrieving key for service, passing")
 		return nil, ""
 	}
 
-	indexer, ok := rg.epIndexer.(cache.Indexer)
-	if !ok {
-		log.WithField("key", key).Warn("getEndpointsForService: endpointslice store is not an indexer, falling back to full scan")
-		for _, obj := range rg.epIndexer.List() {
-			ep, ok := obj.(*discoveryv1.EndpointSlice)
-			if !ok {
-				log.Warn("getEndpointsForService: failed to assert type to endpointslice, passing")
-				continue
-			}
-			if svcName, ok := ep.Labels[discoveryv1.LabelServiceName]; ok && svcName == svc.Name && ep.Namespace == svc.Namespace {
-				eps = append(eps, ep)
-			}
-		}
-		return eps, key
-	}
-
-	objs, err := indexer.ByIndex(endpointSliceServiceIndex, key)
+	objs, err := rg.epIndexer.(cache.Indexer).ByIndex(endpointSliceServiceIndex, key)
 	if err != nil {
-		log.WithField("key", key).WithError(err).Warn("getEndpointsForService: error reading endpointslice index, falling back to full scan")
-		for _, obj := range indexer.List() {
-			ep, ok := obj.(*discoveryv1.EndpointSlice)
-			if !ok {
-				log.Warn("getEndpointsForService: failed to assert type to endpointslice, passing")
-				continue
-			}
-			if svcName, ok := ep.Labels[discoveryv1.LabelServiceName]; ok && svcName == svc.Name && ep.Namespace == svc.Namespace {
-				eps = append(eps, ep)
-			}
-		}
-		return eps, key
+		log.WithField("key", key).WithError(err).Error("getEndpointsForService: error reading endpointslice index")
+		return nil, key
 	}
 
+	var eps []*discoveryv1.EndpointSlice
 	for _, obj := range objs {
 		ep, ok := obj.(*discoveryv1.EndpointSlice)
 		if !ok {
