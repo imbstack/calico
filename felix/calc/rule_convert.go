@@ -128,6 +128,11 @@ func parsedRuleToProtoRule(in *ParsedRule) *proto.Rule {
 		OriginalSrcServiceNamespace:  in.OriginalSrcServiceNamespace,
 		OriginalDstService:           in.OriginalDstService,
 		OriginalDstServiceNamespace:  in.OriginalDstServiceNamespace,
+
+		OriginalSrcSharedNamespaceLabels:    in.OriginalSrcSharedNamespaceLabels,
+		OriginalSrcNotSharedNamespaceLabels: in.OriginalSrcNotSharedNamespaceLabels,
+		OriginalDstSharedNamespaceLabels:    in.OriginalDstSharedNamespaceLabels,
+		OriginalDstNotSharedNamespaceLabels: in.OriginalDstNotSharedNamespaceLabels,
 	}
 
 	if len(in.OriginalSrcServiceAccountNames) > 0 || in.OriginalSrcServiceAccountSelector != "" {

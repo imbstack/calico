@@ -34735,6 +34735,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -34762,6 +34767,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                       http:
                         properties:
@@ -34848,6 +34858,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -34875,6 +34890,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                     required:
                       - action
@@ -34913,6 +34933,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -34940,6 +34965,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                       http:
                         properties:
@@ -35026,6 +35056,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -35053,6 +35088,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                     required:
                       - action
@@ -36002,6 +36042,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -36029,6 +36074,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                       http:
                         properties:
@@ -36115,6 +36165,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -36142,6 +36197,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                     required:
                       - action
@@ -36180,6 +36240,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -36207,6 +36272,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                       http:
                         properties:
@@ -36293,6 +36363,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -36320,6 +36395,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                     required:
                       - action
@@ -36478,6 +36558,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -36505,6 +36590,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                       http:
                         properties:
@@ -36591,6 +36681,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -36618,6 +36713,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                     required:
                       - action
@@ -36656,6 +36756,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -36683,6 +36788,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                       http:
                         properties:
@@ -36769,6 +36879,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -36796,6 +36911,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                     required:
                       - action
@@ -37181,6 +37301,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -37208,6 +37333,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                       http:
                         properties:
@@ -37294,6 +37424,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -37321,6 +37456,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                     required:
                       - action
@@ -37359,6 +37499,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -37386,6 +37531,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                       http:
                         properties:
@@ -37472,6 +37622,11 @@ spec:
                             type: array
                           notSelector:
                             type: string
+                          notSharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                           ports:
                             items:
                               anyOf:
@@ -37499,6 +37654,11 @@ spec:
                               namespace:
                                 type: string
                             type: object
+                          sharedNamespaceLabels:
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                     required:
                       - action

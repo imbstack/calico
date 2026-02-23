@@ -81,6 +81,14 @@ type Rule struct {
 	OriginalDstServiceAccountNames    []string `json:"orig_dst_service_acct_names,omitempty" validate:"omitempty"`
 	OriginalDstServiceAccountSelector string   `json:"orig_dst_service_acct_selector,omitempty" validate:"omitempty,selector"`
 
+	// These fields pass through the sharedNamespaceLabels / notSharedNamespaceLabels match
+	// criteria from the V3 datamodel.  The expander in Felix uses them to construct concrete
+	// per-namespace selectors at policy-activation time.
+	OriginalSrcSharedNamespaceLabels    []string `json:"orig_src_shared_ns_labels,omitempty"`
+	OriginalSrcNotSharedNamespaceLabels []string `json:"orig_src_not_shared_ns_labels,omitempty"`
+	OriginalDstSharedNamespaceLabels    []string `json:"orig_dst_shared_ns_labels,omitempty"`
+	OriginalDstNotSharedNamespaceLabels []string `json:"orig_dst_not_shared_ns_labels,omitempty"`
+
 	// These fields allow us to pass through application layer selectors from the V3 datamodel.
 	HTTPMatch *HTTPMatch `json:"http,omitempty" validate:"omitempty"`
 

@@ -1123,6 +1123,16 @@ func (in *EntityRule) DeepCopyInto(out *EntityRule) {
 		*out = new(ServiceAccountMatch)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.SharedNamespaceLabels != nil {
+		in, out := &in.SharedNamespaceLabels, &out.SharedNamespaceLabels
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.NotSharedNamespaceLabels != nil {
+		in, out := &in.NotSharedNamespaceLabels, &out.NotSharedNamespaceLabels
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 

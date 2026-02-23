@@ -198,6 +198,20 @@ type EntityRule struct {
 	// ServiceAccounts is an optional field that restricts the rule to only apply to traffic that originates from (or
 	// terminates at) a pod running as a matching service account.
 	ServiceAccounts *ServiceAccountMatch `json:"serviceAccounts,omitempty" validate:"omitempty"`
+
+	// SharedNamespaceLabels restricts traffic to/from endpoints in namespaces that share the
+	// same value(s) for the listed label keys as the namespace of the endpoint being evaluated.
+	// Only valid on GlobalNetworkPolicy rules (not NetworkPolicy).
+	// +optional
+	// +listType=atomic
+	SharedNamespaceLabels []string `json:"sharedNamespaceLabels,omitempty" validate:"omitempty"`
+
+	// NotSharedNamespaceLabels is the negated form of SharedNamespaceLabels: it matches
+	// endpoints in namespaces that do NOT share the same value(s) for the listed label keys.
+	// Only valid on GlobalNetworkPolicy rules (not NetworkPolicy).
+	// +optional
+	// +listType=atomic
+	NotSharedNamespaceLabels []string `json:"notSharedNamespaceLabels,omitempty" validate:"omitempty"`
 }
 
 type ServiceMatch struct {

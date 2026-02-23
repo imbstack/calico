@@ -201,6 +201,11 @@ func RuleAPIV3ToBackend(ar apiv3.Rule, ns string) model.Rule {
 		OriginalSrcServiceAccountSelector: srcServiceAcctMatch.Selector,
 		OriginalDstServiceAccountNames:    dstServiceAcctMatch.Names,
 		OriginalDstServiceAccountSelector: dstServiceAcctMatch.Selector,
+
+		OriginalSrcSharedNamespaceLabels:    ar.Source.SharedNamespaceLabels,
+		OriginalSrcNotSharedNamespaceLabels: ar.Source.NotSharedNamespaceLabels,
+		OriginalDstSharedNamespaceLabels:    ar.Destination.SharedNamespaceLabels,
+		OriginalDstNotSharedNamespaceLabels: ar.Destination.NotSharedNamespaceLabels,
 	}
 	if ar.HTTP != nil {
 		r.HTTPMatch = &model.HTTPMatch{Methods: ar.HTTP.Methods, Paths: ar.HTTP.Paths}

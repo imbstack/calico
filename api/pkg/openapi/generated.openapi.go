@@ -2500,6 +2500,46 @@ func schema_pkg_apis_projectcalico_v3_EntityRule(ref common.ReferenceCallback) c
 							Ref:         ref("github.com/projectcalico/api/pkg/apis/projectcalico/v3.ServiceAccountMatch"),
 						},
 					},
+					"sharedNamespaceLabels": {
+						VendorExtensible: spec.VendorExtensible{
+							Extensions: spec.Extensions{
+								"x-kubernetes-list-type": "atomic",
+							},
+						},
+						SchemaProps: spec.SchemaProps{
+							Description: "SharedNamespaceLabels restricts traffic to/from endpoints in namespaces that share the same value(s) for the listed label keys as the namespace of the endpoint being evaluated. Only valid on GlobalNetworkPolicy rules (not NetworkPolicy).",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Default: "",
+										Type:    []string{"string"},
+										Format:  "",
+									},
+								},
+							},
+						},
+					},
+					"notSharedNamespaceLabels": {
+						VendorExtensible: spec.VendorExtensible{
+							Extensions: spec.Extensions{
+								"x-kubernetes-list-type": "atomic",
+							},
+						},
+						SchemaProps: spec.SchemaProps{
+							Description: "NotSharedNamespaceLabels is the negated form of SharedNamespaceLabels: it matches endpoints in namespaces that do NOT share the same value(s) for the listed label keys. Only valid on GlobalNetworkPolicy rules (not NetworkPolicy).",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Default: "",
+										Type:    []string{"string"},
+										Format:  "",
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 		},

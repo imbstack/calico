@@ -126,8 +126,11 @@ func (arc *ActiveRulesCalculator) RegisterWith(localEndpointDispatcher, allUpdDi
 	// It needs the filtered endpoints...
 	localEndpointDispatcher.Register(model.WorkloadEndpointKey{}, arc.OnUpdate)
 	localEndpointDispatcher.Register(model.HostEndpointKey{}, arc.OnUpdate)
-	// ...as well as all the policies and profiles.
-	allUpdDispatcher.Register(model.PolicyKey{}, arc.OnUpdate)
+	// Note: policy updates are NOT registered here. They are fed to us directly by the
+	// NamespacePolicyExpander, which intercepts them from allUpdDispatcher, expands any
+	// SharedNamespaceLabels rules into per-namespace virtual policies, and calls our
+	// OnUpdate method directly.
+	// ...as well as all the profiles, resources, and tiers.
 	allUpdDispatcher.Register(model.ProfileRulesKey{}, arc.OnUpdate)
 	allUpdDispatcher.Register(model.ResourceKey{}, arc.OnUpdate)
 	// ... and tiers as well. only required for stats update.

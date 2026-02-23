@@ -359,6 +359,12 @@ type ParsedRule struct {
 	OriginalDstService                string
 	OriginalDstServiceNamespace       string
 
+	// Pass-through of sharedNamespaceLabels / notSharedNamespaceLabels for the policy sync API.
+	OriginalSrcSharedNamespaceLabels    []string
+	OriginalSrcNotSharedNamespaceLabels []string
+	OriginalDstSharedNamespaceLabels    []string
+	OriginalDstNotSharedNamespaceLabels []string
+
 	// These fields allow us to pass through the HTTP match criteria from the V3 datamodel. The iptables dataplane
 	// does not implement the match, but other dataplanes such as Dikastes do.
 	HTTPMatch *model.HTTPMatch
@@ -475,21 +481,25 @@ func ruleToParsedRule(rule *model.Rule) (parsedRule *ParsedRule, allIPSets []*IP
 		NotICMPCode: rule.NotICMPCode,
 
 		// Pass through original values of some fields for the policy API.
-		OriginalSrcSelector:               rule.OriginalSrcSelector,
-		OriginalSrcNamespaceSelector:      rule.OriginalSrcNamespaceSelector,
-		OriginalDstSelector:               rule.OriginalDstSelector,
-		OriginalDstNamespaceSelector:      rule.OriginalDstNamespaceSelector,
-		OriginalNotSrcSelector:            rule.OriginalNotSrcSelector,
-		OriginalNotDstSelector:            rule.OriginalNotDstSelector,
-		OriginalSrcServiceAccountNames:    rule.OriginalSrcServiceAccountNames,
-		OriginalSrcServiceAccountSelector: rule.OriginalSrcServiceAccountSelector,
-		OriginalDstServiceAccountNames:    rule.OriginalDstServiceAccountNames,
-		OriginalDstServiceAccountSelector: rule.OriginalDstServiceAccountSelector,
-		OriginalSrcService:                rule.SrcService,
-		OriginalSrcServiceNamespace:       rule.SrcServiceNamespace,
-		OriginalDstService:                rule.DstService,
-		OriginalDstServiceNamespace:       rule.DstServiceNamespace,
-		HTTPMatch:                         rule.HTTPMatch,
+		OriginalSrcSelector:                 rule.OriginalSrcSelector,
+		OriginalSrcNamespaceSelector:        rule.OriginalSrcNamespaceSelector,
+		OriginalDstSelector:                 rule.OriginalDstSelector,
+		OriginalDstNamespaceSelector:        rule.OriginalDstNamespaceSelector,
+		OriginalNotSrcSelector:              rule.OriginalNotSrcSelector,
+		OriginalNotDstSelector:              rule.OriginalNotDstSelector,
+		OriginalSrcServiceAccountNames:      rule.OriginalSrcServiceAccountNames,
+		OriginalSrcServiceAccountSelector:   rule.OriginalSrcServiceAccountSelector,
+		OriginalDstServiceAccountNames:      rule.OriginalDstServiceAccountNames,
+		OriginalDstServiceAccountSelector:   rule.OriginalDstServiceAccountSelector,
+		OriginalSrcService:                  rule.SrcService,
+		OriginalSrcServiceNamespace:         rule.SrcServiceNamespace,
+		OriginalDstService:                  rule.DstService,
+		OriginalDstServiceNamespace:         rule.DstServiceNamespace,
+		OriginalSrcSharedNamespaceLabels:    rule.OriginalSrcSharedNamespaceLabels,
+		OriginalSrcNotSharedNamespaceLabels: rule.OriginalSrcNotSharedNamespaceLabels,
+		OriginalDstSharedNamespaceLabels:    rule.OriginalDstSharedNamespaceLabels,
+		OriginalDstNotSharedNamespaceLabels: rule.OriginalDstNotSharedNamespaceLabels,
+		HTTPMatch:                           rule.HTTPMatch,
 
 		// Pass through metadata (used by iptables backend)
 		Metadata: rule.Metadata,
