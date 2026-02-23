@@ -18,12 +18,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/projectcalico/calico/felix/calc"
 	"github.com/projectcalico/calico/felix/proto"
 	"github.com/projectcalico/calico/felix/types"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/api"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/model"
-
-	"github.com/projectcalico/calico/felix/calc"
 )
 
 // --- helpers ---
@@ -434,4 +433,3 @@ func TestSNSLNonSNSLPolicyDelete(t *testing.T) {
 		t.Errorf("expected delete event for %v", key)
 	}
 }
-
