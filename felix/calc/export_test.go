@@ -19,6 +19,21 @@ import (
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/model"
 )
 
+// OnLocalEndpointUpdateForTest exposes the internal onLocalEndpointUpdate method for
+// white-box testing.  ep may be nil to simulate a deletion.
+func (e *NamespacePolicyExpander) OnLocalEndpointUpdateForTest(key model.WorkloadEndpointKey, ep *model.WorkloadEndpoint) {
+	var val interface{}
+	if ep != nil {
+		val = ep
+	}
+	e.onLocalEndpointUpdate(api.Update{
+		KVPair: model.KVPair{
+			Key:   key,
+			Value: val,
+		},
+	})
+}
+
 // OnPolicyUpdateForTest exposes the internal onPolicyUpdate method for white-box testing.
 // policy may be nil to simulate a deletion.
 func (e *NamespacePolicyExpander) OnPolicyUpdateForTest(key model.PolicyKey, policy *model.Policy) {

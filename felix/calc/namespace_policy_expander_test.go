@@ -40,6 +40,15 @@ func snslPolicyKey(name string) model.PolicyKey {
 	return model.PolicyKey{Name: name}
 }
 
+func snslWEPKey(ns, pod string) model.WorkloadEndpointKey {
+	return model.WorkloadEndpointKey{
+		Hostname:       "node1",
+		OrchestratorID: "k8s",
+		WorkloadID:     ns + "/" + pod,
+		EndpointID:     "eth0",
+	}
+}
+
 func snslNSUpdate(name string, labels map[string]string) *proto.NamespaceUpdate {
 	return &proto.NamespaceUpdate{
 		Id:     &proto.NamespaceID{Name: name},
@@ -112,10 +121,11 @@ func TestSNSLPolicyOneNamespace(t *testing.T) {
 	metaC := newSNSLCollector()
 	exp := calc.NewNamespacePolicyExpander(arcC.onUpdate, metaC.onUpdate)
 
-	// First register namespace "foo".
+	// First register namespace "foo" and a local endpoint in it.
 	exp.OnNamespaceUpdate(snslNSUpdate("foo", map[string]string{
 		"kubernetes.io/metadata.name": "foo",
 	}))
+	exp.OnLocalEndpointUpdateForTest(snslWEPKey("foo", "pod-1"), &model.WorkloadEndpoint{})
 
 	// Then add an SNSL policy.
 	rule := model.Rule{
@@ -194,10 +204,11 @@ func TestSNSLNamespaceAddAfterPolicy(t *testing.T) {
 		t.Fatalf("expected 0 policies before namespace add, got %d", len(arcC.active))
 	}
 
-	// Now add namespace.
+	// Add namespace and a local endpoint in it.
 	exp.OnNamespaceUpdate(snslNSUpdate("bar", map[string]string{
 		"kubernetes.io/metadata.name": "bar",
 	}))
+	exp.OnLocalEndpointUpdateForTest(snslWEPKey("bar", "pod-1"), &model.WorkloadEndpoint{})
 
 	// One virtual policy should now be active.
 	if len(arcC.active) != 1 {
@@ -212,6 +223,7 @@ func TestSNSLNamespaceLabelUpdate(t *testing.T) {
 	exp := calc.NewNamespacePolicyExpander(arcC.onUpdate, metaC.onUpdate)
 
 	exp.OnNamespaceUpdate(snslNSUpdate("ns1", map[string]string{"env": "prod"}))
+	exp.OnLocalEndpointUpdateForTest(snslWEPKey("ns1", "pod-1"), &model.WorkloadEndpoint{})
 
 	rule := model.Rule{
 		Action:                           "allow",
@@ -258,6 +270,7 @@ func TestSNSLNamespaceDelete(t *testing.T) {
 	exp := calc.NewNamespacePolicyExpander(arcC.onUpdate, metaC.onUpdate)
 
 	exp.OnNamespaceUpdate(snslNSUpdate("ns1", map[string]string{"kubernetes.io/metadata.name": "ns1"}))
+	exp.OnLocalEndpointUpdateForTest(snslWEPKey("ns1", "pod-1"), &model.WorkloadEndpoint{})
 
 	rule := model.Rule{
 		Action:                           "allow",
@@ -288,6 +301,7 @@ func TestSNSLPolicyDelete(t *testing.T) {
 
 	for _, ns := range []string{"a", "b", "c"} {
 		exp.OnNamespaceUpdate(snslNSUpdate(ns, map[string]string{"kubernetes.io/metadata.name": ns}))
+		exp.OnLocalEndpointUpdateForTest(snslWEPKey(ns, "pod-1"), &model.WorkloadEndpoint{})
 	}
 
 	rule := model.Rule{
@@ -320,6 +334,7 @@ func TestSNSLMultipleKeys(t *testing.T) {
 		"kubernetes.io/metadata.name": "ns1",
 		"env":                         "prod",
 	}))
+	exp.OnLocalEndpointUpdateForTest(snslWEPKey("ns1", "pod-1"), &model.WorkloadEndpoint{})
 
 	rule := model.Rule{
 		Action:                           "allow",
@@ -353,6 +368,7 @@ func TestSNSLMissingLabelImpossibleSelector(t *testing.T) {
 	exp.OnNamespaceUpdate(snslNSUpdate("ns1", map[string]string{
 		"kubernetes.io/metadata.name": "ns1",
 	}))
+	exp.OnLocalEndpointUpdateForTest(snslWEPKey("ns1", "pod-1"), &model.WorkloadEndpoint{})
 
 	rule := model.Rule{
 		Action:                           "allow",
@@ -385,6 +401,7 @@ func TestSNSLNotSharedNamespaceLabels(t *testing.T) {
 	exp.OnNamespaceUpdate(snslNSUpdate("ns1", map[string]string{
 		"kubernetes.io/metadata.name": "ns1",
 	}))
+	exp.OnLocalEndpointUpdateForTest(snslWEPKey("ns1", "pod-1"), &model.WorkloadEndpoint{})
 
 	rule := model.Rule{
 		Action:                              "allow",
@@ -431,5 +448,117 @@ func TestSNSLNonSNSLPolicyDelete(t *testing.T) {
 	}
 	if len(arcC.deletes) != 1 || arcC.deletes[0] != key {
 		t.Errorf("expected delete event for %v", key)
+	}
+}
+
+// TestSNSLNoLocalEndpointsNoVirtualPolicy verifies that no virtual policy is emitted
+// when there are no local endpoints in the namespace, even if the namespace and SNSL
+// policy are both known.
+func TestSNSLNoLocalEndpointsNoVirtualPolicy(t *testing.T) {
+	arcC := newSNSLCollector()
+	metaC := newSNSLCollector()
+	exp := calc.NewNamespacePolicyExpander(arcC.onUpdate, metaC.onUpdate)
+
+	exp.OnNamespaceUpdate(snslNSUpdate("ns1", map[string]string{"kubernetes.io/metadata.name": "ns1"}))
+
+	rule := model.Rule{
+		Action:                           "allow",
+		OriginalSrcSharedNamespaceLabels: []string{"kubernetes.io/metadata.name"},
+	}
+	exp.OnPolicyUpdateForTest(snslPolicyKey("p1"), snslMakePolicy("", []model.Rule{rule}, nil))
+
+	// No local endpoints registered yet — no virtual policies should exist.
+	if len(arcC.active) != 0 {
+		t.Errorf("expected 0 virtual policies with no local endpoints, got %d", len(arcC.active))
+	}
+}
+
+// TestSNSLVirtualPolicyEmittedOnFirstLocalEndpoint verifies that a virtual policy is
+// emitted when the first local endpoint appears in a namespace.
+func TestSNSLVirtualPolicyEmittedOnFirstLocalEndpoint(t *testing.T) {
+	arcC := newSNSLCollector()
+	metaC := newSNSLCollector()
+	exp := calc.NewNamespacePolicyExpander(arcC.onUpdate, metaC.onUpdate)
+
+	exp.OnNamespaceUpdate(snslNSUpdate("ns1", map[string]string{"kubernetes.io/metadata.name": "ns1"}))
+	rule := model.Rule{
+		Action:                           "allow",
+		OriginalSrcSharedNamespaceLabels: []string{"kubernetes.io/metadata.name"},
+	}
+	exp.OnPolicyUpdateForTest(snslPolicyKey("p1"), snslMakePolicy("", []model.Rule{rule}, nil))
+
+	if len(arcC.active) != 0 {
+		t.Fatalf("expected 0 virtual policies before local endpoint, got %d", len(arcC.active))
+	}
+
+	// First local endpoint arrives.
+	exp.OnLocalEndpointUpdateForTest(snslWEPKey("ns1", "pod-a"), &model.WorkloadEndpoint{})
+
+	if len(arcC.active) != 1 {
+		t.Fatalf("expected 1 virtual policy after first local endpoint, got %d", len(arcC.active))
+	}
+}
+
+// TestSNSLVirtualPolicyRetractedOnLastLocalEndpointLeave verifies that the virtual
+// policy is retracted when the last local endpoint in a namespace is removed.
+func TestSNSLVirtualPolicyRetractedOnLastLocalEndpointLeave(t *testing.T) {
+	arcC := newSNSLCollector()
+	metaC := newSNSLCollector()
+	exp := calc.NewNamespacePolicyExpander(arcC.onUpdate, metaC.onUpdate)
+
+	exp.OnNamespaceUpdate(snslNSUpdate("ns1", map[string]string{"kubernetes.io/metadata.name": "ns1"}))
+	rule := model.Rule{
+		Action:                           "allow",
+		OriginalSrcSharedNamespaceLabels: []string{"kubernetes.io/metadata.name"},
+	}
+	exp.OnPolicyUpdateForTest(snslPolicyKey("p1"), snslMakePolicy("", []model.Rule{rule}, nil))
+
+	wep := &model.WorkloadEndpoint{}
+	exp.OnLocalEndpointUpdateForTest(snslWEPKey("ns1", "pod-a"), wep)
+	exp.OnLocalEndpointUpdateForTest(snslWEPKey("ns1", "pod-b"), wep)
+
+	if len(arcC.active) != 1 {
+		t.Fatalf("expected 1 virtual policy with two local endpoints, got %d", len(arcC.active))
+	}
+
+	// Remove first endpoint — virtual policy should persist.
+	exp.OnLocalEndpointUpdateForTest(snslWEPKey("ns1", "pod-a"), nil)
+	if len(arcC.active) != 1 {
+		t.Errorf("expected 1 virtual policy after removing first of two endpoints, got %d", len(arcC.active))
+	}
+
+	// Remove last endpoint — virtual policy should be retracted.
+	exp.OnLocalEndpointUpdateForTest(snslWEPKey("ns1", "pod-b"), nil)
+	if len(arcC.active) != 0 {
+		t.Errorf("expected 0 virtual policies after removing last endpoint, got %d", len(arcC.active))
+	}
+}
+
+// TestSNSLLocalEndpointBeforeNamespaceUpdate verifies that a virtual policy is emitted
+// when a namespace update arrives after the first local endpoint for that namespace.
+func TestSNSLLocalEndpointBeforeNamespaceUpdate(t *testing.T) {
+	arcC := newSNSLCollector()
+	metaC := newSNSLCollector()
+	exp := calc.NewNamespacePolicyExpander(arcC.onUpdate, metaC.onUpdate)
+
+	rule := model.Rule{
+		Action:                           "allow",
+		OriginalSrcSharedNamespaceLabels: []string{"kubernetes.io/metadata.name"},
+	}
+	exp.OnPolicyUpdateForTest(snslPolicyKey("p1"), snslMakePolicy("", []model.Rule{rule}, nil))
+
+	// Local endpoint arrives before namespace labels.
+	exp.OnLocalEndpointUpdateForTest(snslWEPKey("ns1", "pod-a"), &model.WorkloadEndpoint{})
+
+	// Still no virtual policy — no namespace labels yet.
+	if len(arcC.active) != 0 {
+		t.Fatalf("expected 0 virtual policies before namespace update, got %d", len(arcC.active))
+	}
+
+	// Namespace labels arrive — virtual policy should now be emitted.
+	exp.OnNamespaceUpdate(snslNSUpdate("ns1", map[string]string{"kubernetes.io/metadata.name": "ns1"}))
+
+	if len(arcC.active) != 1 {
+		t.Fatalf("expected 1 virtual policy after namespace update, got %d", len(arcC.active))
 	}
 }

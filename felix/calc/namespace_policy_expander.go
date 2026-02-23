@@ -44,10 +44,22 @@ const impossibleSelector = "has(__snsl_never_match__)"
 // unchanged.
 //
 // Namespace label changes trigger re-expansion so virtual policies stay current.
+//
+// Virtual policies are only emitted for namespaces that have at least one local
+// workload endpoint on this node, saving memory proportional to the number of
+// namespaces whose pods are not scheduled here.
 type NamespacePolicyExpander struct {
 	// namespaces maps namespace name -> decoded labels (without pcns. prefix),
 	// as received via OnNamespaceUpdate.
 	namespaces map[string]map[string]string
+
+	// localEndpoints tracks the set of local WorkloadEndpoint keys we have been told
+	// about.  Used to maintain localNSRefCount correctly across add/update/delete.
+	localEndpoints set.Set[model.WorkloadEndpointKey]
+
+	// localNSRefCount counts how many local WorkloadEndpoints exist in each namespace.
+	// Virtual policies are only emitted for namespaces with a non-zero count.
+	localNSRefCount map[string]int
 
 	// snslPolicies stores policies that have SharedNamespaceLabels / NotSharedNamespaceLabels
 	// in at least one rule.  These are NOT forwarded directly to ARC; instead their virtual
@@ -77,6 +89,8 @@ func NewNamespacePolicyExpander(
 ) *NamespacePolicyExpander {
 	return &NamespacePolicyExpander{
 		namespaces:      make(map[string]map[string]string),
+		localEndpoints:  set.New[model.WorkloadEndpointKey](),
+		localNSRefCount: make(map[string]int),
 		snslPolicies:    make(map[model.PolicyKey]*model.Policy),
 		realToVirtualNs: make(map[model.PolicyKey]set.Set[string]),
 		arcReceiver:     arcReceiver,
@@ -85,9 +99,11 @@ func NewNamespacePolicyExpander(
 }
 
 // RegisterWith registers the expander with allUpdDispatcher so it intercepts all
-// model.PolicyKey updates before they reach ActiveRulesCalculator.
-func (e *NamespacePolicyExpander) RegisterWith(allUpdDispatcher *dispatcher.Dispatcher) {
+// model.PolicyKey updates before they reach ActiveRulesCalculator, and with
+// localEndpointDispatcher to track which namespaces have local pods.
+func (e *NamespacePolicyExpander) RegisterWith(allUpdDispatcher, localEndpointDispatcher *dispatcher.Dispatcher) {
 	allUpdDispatcher.Register(model.PolicyKey{}, e.onPolicyUpdate)
+	localEndpointDispatcher.Register(model.WorkloadEndpointKey{}, e.onLocalEndpointUpdate)
 }
 
 // virtualPolicyKey returns the internal policy key used for the virtual expansion of
@@ -157,6 +173,50 @@ func (e *NamespacePolicyExpander) onPolicyUpdate(update api.Update) (filterOut b
 	return false
 }
 
+// onLocalEndpointUpdate is called by localEndpointDispatcher for every local
+// WorkloadEndpoint add, update, or delete.  It maintains localNSRefCount so that
+// virtual policies are only emitted for namespaces that have at least one pod on
+// this node.
+func (e *NamespacePolicyExpander) onLocalEndpointUpdate(update api.Update) (filterOut bool) {
+	key := update.Key.(model.WorkloadEndpointKey)
+	ns := key.GetNamespace()
+	if ns == "" {
+		return false
+	}
+
+	if update.Value == nil {
+		// Endpoint deleted.
+		if !e.localEndpoints.Contains(key) {
+			return false
+		}
+		e.localEndpoints.Discard(key)
+		e.localNSRefCount[ns]--
+		if e.localNSRefCount[ns] == 0 {
+			delete(e.localNSRefCount, ns)
+			// Last endpoint in this namespace — retract all virtual policies for it.
+			for realKey := range e.snslPolicies {
+				e.retractVirtualPolicy(realKey, ns)
+			}
+		}
+	} else {
+		// Endpoint added or updated.
+		if e.localEndpoints.Contains(key) {
+			return false // already counted; update doesn't change refcount
+		}
+		e.localEndpoints.Add(key)
+		prev := e.localNSRefCount[ns]
+		e.localNSRefCount[ns]++
+		if prev == 0 {
+			// First endpoint in this namespace — emit virtual policies if we have labels.
+			if nsLabels, ok := e.namespaces[ns]; ok {
+				e.reconcileNamespaceForAllPolicies(ns, nsLabels)
+			}
+			// If namespace labels haven't arrived yet they will be emitted by OnNamespaceUpdate.
+		}
+	}
+	return false
+}
+
 // OnNamespaceUpdate is called (via the nsAwareCallbacks wrapper) when a namespace's
 // labels change.
 func (e *NamespacePolicyExpander) OnNamespaceUpdate(msg *proto.NamespaceUpdate) {
@@ -176,10 +236,13 @@ func (e *NamespacePolicyExpander) OnNamespaceRemove(id types.NamespaceID) {
 }
 
 // reconcilePolicyForAllNamespaces ensures virtual policies for realKey are up to date
-// across all known namespaces when the policy is created or updated.
+// across all namespaces that have local endpoints when the policy is created or updated.
 func (e *NamespacePolicyExpander) reconcilePolicyForAllNamespaces(realKey model.PolicyKey, policy *model.Policy) {
 	currentNSes := set.New[string]()
 	for nsName, nsLabels := range e.namespaces {
+		if e.localNSRefCount[nsName] == 0 {
+			continue // no local endpoints in this namespace
+		}
 		currentNSes.Add(nsName)
 		e.emitVirtualPolicy(realKey, nsName, nsLabels, policy)
 	}
@@ -202,8 +265,12 @@ func (e *NamespacePolicyExpander) reconcilePolicyForAllNamespaces(realKey model.
 }
 
 // reconcileNamespaceForAllPolicies updates virtual policies for nsName across all SNSL
-// policies when a namespace is added or its labels change.
+// policies when a namespace is added or its labels change.  It is a no-op when there
+// are no local endpoints in nsName.
 func (e *NamespacePolicyExpander) reconcileNamespaceForAllPolicies(nsName string, nsLabels map[string]string) {
+	if e.localNSRefCount[nsName] == 0 {
+		return
+	}
 	for realKey, policy := range e.snslPolicies {
 		e.emitVirtualPolicy(realKey, nsName, nsLabels, policy)
 	}

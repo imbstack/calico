@@ -403,7 +403,7 @@ func NewCalculationGraph(
 	// (see its RegisterWith method).  The expander is the sole receiver of policy updates and
 	// feeds ARC (and PolicyResolver for metadata) directly.
 	expander := NewNamespacePolicyExpander(activeRulesCalc.OnUpdate, polResolver.OnUpdate)
-	expander.RegisterWith(allUpdDispatcher)
+	expander.RegisterWith(allUpdDispatcher, localEndpointDispatcher)
 	cg.namespacePolicyExpander = expander
 
 	// Create and hook up the active BGP peer calculator.
