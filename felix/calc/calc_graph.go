@@ -31,6 +31,23 @@ import (
 	"github.com/projectcalico/calico/libcalico-go/lib/net"
 )
 
+// nsAwareCallbacks wraps PipelineCallbacks and intercepts OnNamespaceUpdate /
+// OnNamespaceRemove to also notify the NamespacePolicyExpander.
+type nsAwareCallbacks struct {
+	PipelineCallbacks
+	expander *NamespacePolicyExpander
+}
+
+func (w *nsAwareCallbacks) OnNamespaceUpdate(msg *proto.NamespaceUpdate) {
+	w.expander.OnNamespaceUpdate(msg)
+	w.PipelineCallbacks.OnNamespaceUpdate(msg)
+}
+
+func (w *nsAwareCallbacks) OnNamespaceRemove(id types.NamespaceID) {
+	w.expander.OnNamespaceRemove(id)
+	w.PipelineCallbacks.OnNamespaceRemove(id)
+}
+
 var gaugeNumActiveSelectors = prometheus.NewGauge(prometheus.GaugeOpts{
 	Name: "felix_active_local_selectors",
 	Help: "Number of active selectors on this host.",
@@ -132,6 +149,7 @@ type CalcGraph struct {
 	profileDecoder          *ProfileDecoder
 	encapsulationResolver   *EncapsulationResolver
 	policyResolver          *PolicyResolver
+	namespacePolicyExpander *NamespacePolicyExpander
 }
 
 func (g *CalcGraph) OnUpdates(updates []api.Update) {
@@ -377,6 +395,17 @@ func NewCalculationGraph(
 	polResolver.RegisterCallback(callbacks)
 	cg.policyResolver = polResolver
 
+	// Create the NamespacePolicyExpander.  It intercepts policy updates from allUpdDispatcher
+	// and expands rules that use SharedNamespaceLabels / NotSharedNamespaceLabels into
+	// per-namespace virtual policies.  Non-SNSL policies are forwarded unchanged.
+	//
+	// Note: ActiveRulesCalculator no longer registers for model.PolicyKey with allUpdDispatcher
+	// (see its RegisterWith method).  The expander is the sole receiver of policy updates and
+	// feeds ARC (and PolicyResolver for metadata) directly.
+	expander := NewNamespacePolicyExpander(activeRulesCalc.OnUpdate, polResolver.OnUpdate)
+	expander.RegisterWith(allUpdDispatcher)
+	cg.namespacePolicyExpander = expander
+
 	// Create and hook up the active BGP peer calculator.
 	activeBGPPeerCalc := NewActiveBGPPeerCalculator(hostname)
 	activeBGPPeerCalc.RegisterWith(localEndpointDispatcher, allUpdDispatcher)
@@ -468,7 +497,12 @@ func NewCalculationGraph(
 	//         |
 	//      <dataplane>
 	//
-	profileDecoder := NewProfileDecoder(callbacks)
+	// Wrap the callbacks so the expander receives namespace label updates.
+	wrappedCallbacks := &nsAwareCallbacks{
+		PipelineCallbacks: callbacks,
+		expander:          expander,
+	}
+	profileDecoder := NewProfileDecoder(wrappedCallbacks)
 	profileDecoder.RegisterWith(allUpdDispatcher)
 	cg.profileDecoder = profileDecoder
 

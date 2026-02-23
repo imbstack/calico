@@ -330,6 +330,12 @@ message Rule {
   string original_dst_service = 130;
   string original_dst_service_namespace = 131;
 
+  // Pass-through of sharedNamespaceLabels / notSharedNamespaceLabels for the policy sync API.
+  repeated string original_src_shared_namespace_labels = 134;
+  repeated string original_src_not_shared_namespace_labels = 135;
+  repeated string original_dst_shared_namespace_labels = 136;
+  repeated string original_dst_not_shared_namespace_labels = 137;
+
   // Pass through of the v3 datamodel service account match criteria.
   ServiceAccountMatch src_service_account_match = 120;
   ServiceAccountMatch dst_service_account_match = 121;

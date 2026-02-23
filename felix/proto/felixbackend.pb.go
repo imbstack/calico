@@ -2202,6 +2202,11 @@ type Rule struct {
 	// Original destination service match criteria.
 	OriginalDstService          string `protobuf:"bytes,130,opt,name=original_dst_service,json=originalDstService,proto3" json:"original_dst_service,omitempty"`
 	OriginalDstServiceNamespace string `protobuf:"bytes,131,opt,name=original_dst_service_namespace,json=originalDstServiceNamespace,proto3" json:"original_dst_service_namespace,omitempty"`
+	// Pass-through of sharedNamespaceLabels / notSharedNamespaceLabels for the policy sync API.
+	OriginalSrcSharedNamespaceLabels    []string `protobuf:"bytes,134,rep,name=original_src_shared_namespace_labels,json=originalSrcSharedNamespaceLabels,proto3" json:"original_src_shared_namespace_labels,omitempty"`
+	OriginalSrcNotSharedNamespaceLabels []string `protobuf:"bytes,135,rep,name=original_src_not_shared_namespace_labels,json=originalSrcNotSharedNamespaceLabels,proto3" json:"original_src_not_shared_namespace_labels,omitempty"`
+	OriginalDstSharedNamespaceLabels    []string `protobuf:"bytes,136,rep,name=original_dst_shared_namespace_labels,json=originalDstSharedNamespaceLabels,proto3" json:"original_dst_shared_namespace_labels,omitempty"`
+	OriginalDstNotSharedNamespaceLabels []string `protobuf:"bytes,137,rep,name=original_dst_not_shared_namespace_labels,json=originalDstNotSharedNamespaceLabels,proto3" json:"original_dst_not_shared_namespace_labels,omitempty"`
 	// Pass through of the v3 datamodel service account match criteria.
 	SrcServiceAccountMatch *ServiceAccountMatch `protobuf:"bytes,120,opt,name=src_service_account_match,json=srcServiceAccountMatch,proto3" json:"src_service_account_match,omitempty"`
 	DstServiceAccountMatch *ServiceAccountMatch `protobuf:"bytes,121,opt,name=dst_service_account_match,json=dstServiceAccountMatch,proto3" json:"dst_service_account_match,omitempty"`
@@ -2509,6 +2514,34 @@ func (x *Rule) GetOriginalDstServiceNamespace() string {
 		return x.OriginalDstServiceNamespace
 	}
 	return ""
+}
+
+func (x *Rule) GetOriginalSrcSharedNamespaceLabels() []string {
+	if x != nil {
+		return x.OriginalSrcSharedNamespaceLabels
+	}
+	return nil
+}
+
+func (x *Rule) GetOriginalSrcNotSharedNamespaceLabels() []string {
+	if x != nil {
+		return x.OriginalSrcNotSharedNamespaceLabels
+	}
+	return nil
+}
+
+func (x *Rule) GetOriginalDstSharedNamespaceLabels() []string {
+	if x != nil {
+		return x.OriginalDstSharedNamespaceLabels
+	}
+	return nil
+}
+
+func (x *Rule) GetOriginalDstNotSharedNamespaceLabels() []string {
+	if x != nil {
+		return x.OriginalDstNotSharedNamespaceLabels
+	}
+	return nil
 }
 
 func (x *Rule) GetSrcServiceAccountMatch() *ServiceAccountMatch {
@@ -6536,7 +6569,7 @@ const file_felixbackend_proto_rawDesc = "" +
 	"\x11original_selector\x18\x06 \x01(\tR\x10originalSelector\x12\x1d\n" +
 	"\n" +
 	"perf_hints\x18\a \x03(\tR\tperfHints\x12\x12\n" +
-	"\x04tier\x18\b \x01(\tR\x04tier\"\xaa\x10\n" +
+	"\x04tier\x18\b \x01(\tR\x04tier\"\xfc\x12\n" +
 	"\x04Rule\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12/\n" +
 	"\n" +
@@ -6574,7 +6607,11 @@ const file_felixbackend_proto_rawDesc = "" +
 	"\x14original_src_service\x18\x84\x01 \x01(\tR\x12originalSrcService\x12D\n" +
 	"\x1eoriginal_src_service_namespace\x18\x85\x01 \x01(\tR\x1boriginalSrcServiceNamespace\x121\n" +
 	"\x14original_dst_service\x18\x82\x01 \x01(\tR\x12originalDstService\x12D\n" +
-	"\x1eoriginal_dst_service_namespace\x18\x83\x01 \x01(\tR\x1boriginalDstServiceNamespace\x12U\n" +
+	"\x1eoriginal_dst_service_namespace\x18\x83\x01 \x01(\tR\x1boriginalDstServiceNamespace\x12O\n" +
+	"$original_src_shared_namespace_labels\x18\x86\x01 \x03(\tR originalSrcSharedNamespaceLabels\x12V\n" +
+	"(original_src_not_shared_namespace_labels\x18\x87\x01 \x03(\tR#originalSrcNotSharedNamespaceLabels\x12O\n" +
+	"$original_dst_shared_namespace_labels\x18\x88\x01 \x03(\tR originalDstSharedNamespaceLabels\x12V\n" +
+	"(original_dst_not_shared_namespace_labels\x18\x89\x01 \x03(\tR#originalDstNotSharedNamespaceLabels\x12U\n" +
 	"\x19src_service_account_match\x18x \x01(\v2\x1a.felix.ServiceAccountMatchR\x16srcServiceAccountMatch\x12U\n" +
 	"\x19dst_service_account_match\x18y \x01(\v2\x1a.felix.ServiceAccountMatchR\x16dstServiceAccountMatch\x12/\n" +
 	"\n" +
