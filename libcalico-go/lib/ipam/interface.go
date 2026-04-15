@@ -126,4 +126,12 @@ type Interface interface {
 	//   - Swap attributes: updates.ActiveOwnerAttrs=<current alternate>, updates.AlternateOwnerAttrs=<current active>
 	//   - Set both: updates.ActiveOwnerAttrs=<new active>, updates.AlternateOwnerAttrs=<new alternate>
 	SetOwnerAttributes(ctx context.Context, ip cnet.IP, handleID string, updates *OwnerAttributeUpdates, preconditions *OwnerAttributePreconditions) error
+
+	// GarbageCollectColdIPs runs garbage collection on the given pre-loaded
+	// block, deallocating any released IPs whose cooldown period has elapsed.
+	// It writes the block back to the datastore if it was modified.
+	// Garbage collection is run by the CNI plugin every time a block is
+	// loaded, so this acts as a failsafe to ensure any otherwise-untouched
+	// blocks get collected.
+	GarbageCollectColdIPs(ctx context.Context, config *IPAMConfig, kvp *model.KVPair) error
 }

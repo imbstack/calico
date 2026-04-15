@@ -16,9 +16,11 @@ package model
 
 import (
 	"fmt"
+	"maps"
 	"math/big"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -196,6 +198,26 @@ func (b *AllocationBlock) IsDeleted() bool {
 	return b.Deleted
 }
 
+// clone returns a copy of this block that can be modified without affecting
+// the original.
+func (b *AllocationBlock) Clone() *AllocationBlock {
+	attributes := slices.Clone(b.Attributes)
+	for i := range attributes {
+		attributes[i] = attributes[i].Clone()
+	}
+	return &AllocationBlock{
+		CIDR:                        b.CIDR,
+		Affinity:                    b.Affinity,
+		Allocations:                 slices.Clone(b.Allocations),
+		Unallocated:                 slices.Clone(b.Unallocated),
+		Attributes:                  slices.Clone(attributes),
+		SequenceNumber:              b.SequenceNumber,
+		SequenceNumberForAllocation: maps.Clone(b.SequenceNumberForAllocation),
+		Deleted:                     b.Deleted,
+		HostAffinity:                b.HostAffinity,
+	}
+}
+
 func (b *AllocationBlock) Host() string {
 	if b.Affinity != nil && strings.HasPrefix(*b.Affinity, fmt.Sprintf("%s:", IPAMAffinityTypeHost)) {
 		return strings.TrimPrefix(*b.Affinity, fmt.Sprintf("%s:", IPAMAffinityTypeHost))
@@ -277,4 +299,17 @@ type AllocationAttribute struct {
 	// AlternateOwnerAttrs contains attributes of the previous or potential owner
 	// (used during live migration to track the source or target pod).
 	AlternateOwnerAttrs map[string]string `json:"alternateOwnerAttrs,omitempty"`
+	// ReleasedAt is the time this allocation was released, and is set during the allocation's
+	// "cooldown" phase. After `IPCooldownSeconds` have elapsed, the IP is deallocated (moved
+	// from `Allocated` to `Unallocated`).
+	ReleasedAt *metav1.Time `json:"releasedAt,omitempty"`
+}
+
+func (a AllocationAttribute) Clone() AllocationAttribute {
+	return AllocationAttribute{
+		HandleID:            a.HandleID,
+		ActiveOwnerAttrs:    maps.Clone(a.ActiveOwnerAttrs),
+		AlternateOwnerAttrs: maps.Clone(a.AlternateOwnerAttrs),
+		ReleasedAt:          a.ReleasedAt,
+	}
 }

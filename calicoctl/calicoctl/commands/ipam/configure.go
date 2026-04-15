@@ -35,6 +35,7 @@ func updateIPAMConfig(
 	strictAffinity *bool,
 	maxBlocks *int,
 	persistence *ipam.VMAddressPersistence,
+	ipCooldownSeconds *int,
 ) error {
 	ipamConfig, err := ipamClient.GetIPAMConfig(ctx)
 	if err != nil {
@@ -55,6 +56,10 @@ func updateIPAMConfig(
 	if persistence != nil {
 		ipamConfig.KubeVirtVMAddressPersistence = persistence
 	}
+	// Update IPCooldownSeconds if specified.
+	if ipCooldownSeconds != nil {
+		ipamConfig.IPCooldownSeconds = *ipCooldownSeconds
+	}
 
 	err = ipamClient.SetIPAMConfig(ctx, *ipamConfig)
 	if err != nil {
@@ -69,6 +74,9 @@ func updateIPAMConfig(
 	}
 	if persistence != nil {
 		fmt.Println("Successfully set KubeVirtVMAddressPersistence to:", *persistence)
+	}
+	if ipCooldownSeconds != nil {
+		fmt.Println("Successfully set IPCooldownSeconds to:", *ipCooldownSeconds)
 	}
 
 	return nil
@@ -102,6 +110,9 @@ Options:
      --strictaffinity=<true/false>  Set StrictAffinity to true/false. When StrictAffinity
                                     is true, borrowing IP addresses is not allowed.
      --max-blocks-per-host=<number> Set the maximum number of blocks that can be affine to a host.
+     --ip-cooldown-seconds=<number>
+                                    Set the maximum time between release and re-allocation of an IP
+                                    address.
      --kubevirt-ip-persistence=<Enabled|Disabled>
                                     Control whether KubeVirt VMs retain persistent IP addresses
                                     across lifecycle events.
@@ -161,6 +172,16 @@ Description:
 		maxBlocks = &maxBlocksVal
 	}
 
+	// Parse IPCooldownSeconds (optional).
+	var ipCooldownSeconds *int
+	if val, ok := parsedArgs["--ip-cooldown-seconds"].(string); ok && val != "" {
+		ipCooldownSecondsVal, err := strconv.Atoi(val)
+		if err != nil {
+			return err
+		}
+		ipCooldownSeconds = &ipCooldownSecondsVal
+	}
+
 	// Parse KubeVirtVMAddressPersistence (optional).
 	var persistence *ipam.VMAddressPersistence
 	if val, ok := parsedArgs["--kubevirt-ip-persistence"].(string); ok && val != "" {
@@ -174,5 +195,5 @@ Description:
 		return fmt.Errorf("at least one configuration option must be specified")
 	}
 
-	return updateIPAMConfig(ctx, ipamClient, strictAffinity, maxBlocks, persistence)
+	return updateIPAMConfig(ctx, ipamClient, strictAffinity, maxBlocks, persistence, ipCooldownSeconds)
 }
