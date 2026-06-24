@@ -45,6 +45,15 @@ spec:
                 autoAllocateBlocks:
                   default: true
                   type: boolean
+                ipCooldownSeconds:
+                  description: |-
+                    IPCooldownSeconds is the minimum age of a released IP in a block before it is re-used.
+                    If set to zero, IPs can be re-used immediately (but are still handled with a FIFO queue to
+                    minimize immediate reuse).
+                  format: int32
+                  maximum: 1200
+                  minimum: 0
+                  type: integer
                 kubeVirtVMAddressPersistence:
                   enum:
                     - Enabled
