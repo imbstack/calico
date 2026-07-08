@@ -50,6 +50,13 @@ type IPAMConfigSpec struct {
 	// +kubebuilder:validation:Maximum:=2147483647
 	// +optional
 	MaxBlocksPerHost int `json:"maxBlocksPerHost,omitempty"`
+
+	// IPCooldownSeconds is the minimum age of a released IP in a block before it is re-used.
+	// If set to zero, IPs can be re-used immediately (but are still handled with a FIFO queue to
+	// minimize immediate reuse).
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1200
+	IPCooldownSeconds int32 `json:"ipCooldownSeconds,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

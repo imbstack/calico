@@ -211,6 +211,7 @@ func IPAMBlockV3toV1(kvpv3 *model.KVPair) (*model.KVPair, error) {
 		attrs = append(attrs, model.AllocationAttribute{
 			AttrPrimary:   a.AttrPrimary,
 			AttrSecondary: a.AttrSecondary,
+			ReleasedAt:    a.ReleasedAt,
 		})
 	}
 
@@ -244,6 +245,7 @@ func IPAMBlockV1toV3(kvpv1 *model.KVPair) *model.KVPair {
 		attrs = append(attrs, libapiv3.AllocationAttribute{
 			AttrPrimary:   a.AttrPrimary,
 			AttrSecondary: a.AttrSecondary,
+			ReleasedAt:    a.ReleasedAt,
 		})
 	}
 

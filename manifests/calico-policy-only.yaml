@@ -2577,6 +2577,9 @@ spec:
                     properties:
                       handle_id:
                         type: string
+                      releasedAt:
+                        format: date-time
+                        type: string
                       secondary:
                         additionalProperties:
                           type: string
@@ -2644,6 +2647,11 @@ spec:
               properties:
                 autoAllocateBlocks:
                   type: boolean
+                ipCooldownSeconds:
+                  format: int32
+                  maximum: 1200
+                  minimum: 0
+                  type: integer
                 maxBlocksPerHost:
                   maximum: 2147483647
                   minimum: 0

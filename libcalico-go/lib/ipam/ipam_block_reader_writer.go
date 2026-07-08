@@ -135,7 +135,7 @@ func (rw blockReaderWriter) findUsableBlock(ctx context.Context, affinityCfg Aff
 			AffinityType: affinityType,
 			Host:         host,
 		}
-		numFree := allocationBlock{e.Value.(*model.AllocationBlock)}.NumFreeAddresses(reservations)
+		numFree := blockFromBackend(&config, e.Value.(*model.AllocationBlock)).NumFreeAddresses(reservations)
 		exists[e.Key.(model.BlockKey).CIDR.String()] = blockInfo{numFree: numFree, affinityCfg: bAffinityCfg}
 	}
 
@@ -238,7 +238,7 @@ func (rw blockReaderWriter) claimAffineBlock(ctx context.Context, aff *model.KVP
 			}
 
 			// Pull out the allocationBlock object.
-			b := allocationBlock{obj.Value.(*model.AllocationBlock)}
+			b := blockFromBackend(&config, obj.Value.(*model.AllocationBlock))
 
 			if b.Affinity != nil && *b.Affinity == affinityKeyStr {
 				// Block has affinity to this host, meaning another
@@ -301,7 +301,7 @@ func (rw blockReaderWriter) confirmAffinity(ctx context.Context, aff *model.KVPa
 
 // releaseBlockAffinity releases the host's affinity to the given block, and returns an affinityClaimedError if
 // the host does not claim an affinity for the block.
-func (rw blockReaderWriter) releaseBlockAffinity(ctx context.Context, affinityCfg AffinityConfig, blockCIDR cnet.IPNet, requireEmpty bool) error {
+func (rw blockReaderWriter) releaseBlockAffinity(ctx context.Context, config *IPAMConfig, affinityCfg AffinityConfig, blockCIDR cnet.IPNet, requireEmpty bool) error {
 	// Make sure hostname is not empty.
 	if affinityCfg.Host == "" {
 		log.Errorf("Hostname can't be empty")
@@ -325,7 +325,7 @@ func (rw blockReaderWriter) releaseBlockAffinity(ctx context.Context, affinityCf
 		logCtx.WithError(err).Warnf("Error getting block")
 		return err
 	}
-	b := allocationBlock{obj.Value.(*model.AllocationBlock)}
+	b := blockFromBackend(config, obj.Value.(*model.AllocationBlock))
 
 	// Check that the block affinity matches the given affinity.
 	if b.Affinity != nil && !affinityMatches(affinityCfg, b.AllocationBlock) {

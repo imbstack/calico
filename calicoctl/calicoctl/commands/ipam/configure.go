@@ -29,7 +29,7 @@ import (
 	"github.com/projectcalico/calico/libcalico-go/lib/ipam"
 )
 
-func updateIPAMStrictAffinity(ctx context.Context, ipamClient ipam.Interface, enabled bool, maxBlocks *int) error {
+func updateIPAMStrictAffinity(ctx context.Context, ipamClient ipam.Interface, enabled bool, maxBlocks *int, ipCooldownSeconds *int) error {
 	ipamConfig, err := ipamClient.GetIPAMConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("error: %v", err)
@@ -44,6 +44,11 @@ func updateIPAMStrictAffinity(ctx context.Context, ipamClient ipam.Interface, en
 		ipamConfig.MaxBlocksPerHost = *maxBlocks
 	}
 
+	// Update IPCooldownSeconds if specified.
+	if ipCooldownSeconds != nil {
+		ipamConfig.IPCooldownSeconds = *ipCooldownSeconds
+	}
+
 	err = ipamClient.SetIPAMConfig(ctx, *ipamConfig)
 	if err != nil {
 		return fmt.Errorf("error: %v", err)
@@ -52,6 +57,9 @@ func updateIPAMStrictAffinity(ctx context.Context, ipamClient ipam.Interface, en
 	fmt.Println("Successfully set StrictAffinity to:", enabled)
 	if maxBlocks != nil {
 		fmt.Println("Successfully set MaxBlocksPerHost to:", *maxBlocks)
+	}
+	if ipCooldownSeconds != nil {
+		fmt.Println("Successfully set IPCooldownSeconds to:", *ipCooldownSeconds)
 	}
 
 	return nil
@@ -67,6 +75,9 @@ Options:
      --strictaffinity=<true/false> Set StrictAffinity to true/false. When StrictAffinity
                                    is true, borrowing IP addresses is not allowed.
      --max-blocks-per-host=<number>       Set the maximum number of blocks that can be affine to a host.
+     --ip-cooldown-seconds=<number>
+                                    Set the maximum time between release and re-allocation of an IP
+                                    address.
   -c --config=<CONFIG>             Path to the file containing connection configuration in
                                    YAML or JSON format.
                                    [default: ` + constants.DefaultConfigPath + `]
@@ -117,5 +128,15 @@ Description:
 		maxBlocks = &maxBlocksVal
 	}
 
-	return updateIPAMStrictAffinity(ctx, ipamClient, enabled, maxBlocks)
+	// Parse IPCooldownSeconds (optional).
+	var ipCooldownSeconds *int
+	if val, ok := parsedArgs["--ip-cooldown-seconds"].(string); ok && val != "" {
+		ipCooldownSecondsVal, err := strconv.Atoi(val)
+		if err != nil {
+			return err
+		}
+		ipCooldownSeconds = &ipCooldownSecondsVal
+	}
+
+	return updateIPAMStrictAffinity(ctx, ipamClient, enabled, maxBlocks, ipCooldownSeconds)
 }

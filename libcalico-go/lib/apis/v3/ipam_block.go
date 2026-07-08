@@ -86,6 +86,11 @@ type IPAMBlockSpec struct {
 type AllocationAttribute struct {
 	AttrPrimary   *string           `json:"handle_id,omitempty"`
 	AttrSecondary map[string]string `json:"secondary,omitempty"`
+	// ReleasedAt is the time this allocation was released, and is set during the allocation's
+	// "cooldown" phase. After `IPCooldownSeconds` have elapsed, the IP is deallocated (moved
+	// from `Allocated` to `Unallocated`).
+	// +optional
+	ReleasedAt *metav1.Time `json:"releasedAt,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

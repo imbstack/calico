@@ -40,6 +40,9 @@ spec:
                     properties:
                       handle_id:
                         type: string
+                      releasedAt:
+                        format: date-time
+                        type: string
                       secondary:
                         additionalProperties:
                           type: string

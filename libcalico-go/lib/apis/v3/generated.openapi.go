@@ -2101,9 +2101,17 @@ func schema_libcalico_go_lib_apis_v3_AllocationAttribute(ref common.ReferenceCal
 							},
 						},
 					},
+					"releasedAt": {
+						SchemaProps: spec.SchemaProps{
+							Description: "ReleasedAt is the time this allocation was released, and is set during the allocation's \"cooldown\" phase. After `IPCooldownSeconds` have elapsed, the IP is deallocated (moved from `Allocated` to `Unallocated`).",
+							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
+						},
+					},
 				},
 			},
 		},
+		Dependencies: []string{
+			"k8s.io/apimachinery/pkg/apis/meta/v1.Time"},
 	}
 }
 
@@ -2570,6 +2578,13 @@ func schema_libcalico_go_lib_apis_v3_IPAMConfigSpec(ref common.ReferenceCallback
 					"maxBlocksPerHost": {
 						SchemaProps: spec.SchemaProps{
 							Description: "MaxBlocksPerHost, if non-zero, is the max number of blocks that can be affine to each host.",
+							Type:        []string{"integer"},
+							Format:      "int32",
+						},
+					},
+					"ipCooldownSeconds": {
+						SchemaProps: spec.SchemaProps{
+							Description: "IPCooldownSeconds is the minimum age of a released IP in a block before it is re-used. If set to zero, IPs can be re-used immediately (but are still handled with a FIFO queue to minimize immediate reuse).",
 							Type:        []string{"integer"},
 							Format:      "int32",
 						},

@@ -50,4 +50,9 @@ type IPAMConfig struct {
 	StrictAffinity     bool `json:"strict_affinity,omitempty"`
 	AutoAllocateBlocks bool `json:"auto_allocate_blocks,omitempty"`
 	MaxBlocksPerHost   int  `json:"maxBlocksPerHost,omitempty"`
+	// IPCooldownSeconds defines the time period after an IP is released
+	// during which it will not be re-allocated. If set to zero, IPs can be
+	// re-used immediately (but are still handled with a FIFO queue to
+	// minimize immediate reuse).
+	IPCooldownSeconds int `json:"ipCooldownSeconds,omitempty"`
 }

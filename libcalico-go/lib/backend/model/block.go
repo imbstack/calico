@@ -16,12 +16,15 @@ package model
 
 import (
 	"fmt"
+	"maps"
 	"math/big"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/projectcalico/calico/libcalico-go/lib/errors"
 	"github.com/projectcalico/calico/libcalico-go/lib/net"
@@ -172,6 +175,26 @@ func (b *AllocationBlock) IsDeleted() bool {
 	return b.Deleted
 }
 
+// clone returns a copy of this block that can be modified without affecting
+// the original.
+func (b *AllocationBlock) Clone() *AllocationBlock {
+	attributes := slices.Clone(b.Attributes)
+	for i := range attributes {
+		attributes[i] = attributes[i].Clone()
+	}
+	return &AllocationBlock{
+		CIDR:                        b.CIDR,
+		Affinity:                    b.Affinity,
+		Allocations:                 slices.Clone(b.Allocations),
+		Unallocated:                 slices.Clone(b.Unallocated),
+		Attributes:                  slices.Clone(attributes),
+		SequenceNumber:              b.SequenceNumber,
+		SequenceNumberForAllocation: maps.Clone(b.SequenceNumberForAllocation),
+		Deleted:                     b.Deleted,
+		HostAffinity:                b.HostAffinity,
+	}
+}
+
 func (b *AllocationBlock) Host() string {
 	if b.Affinity != nil && strings.HasPrefix(*b.Affinity, fmt.Sprintf("%s:", IPAMAffinityTypeHost)) {
 		return strings.TrimPrefix(*b.Affinity, fmt.Sprintf("%s:", IPAMAffinityTypeHost))
@@ -248,4 +271,16 @@ func (b *AllocationBlock) OrdinalToIP(ord int) net.IP {
 type AllocationAttribute struct {
 	AttrPrimary   *string           `json:"handle_id"`
 	AttrSecondary map[string]string `json:"secondary"`
+	// ReleasedAt is the time this allocation was released, and is set during the allocation's
+	// "cooldown" phase. After `IPCooldownSeconds` have elapsed, the IP is deallocated (moved
+	// from `Allocated` to `Unallocated`).
+	ReleasedAt *metav1.Time `json:"releasedAt,omitempty"`
+}
+
+func (a AllocationAttribute) Clone() AllocationAttribute {
+	return AllocationAttribute{
+		AttrPrimary:   a.AttrPrimary,
+		AttrSecondary: maps.Clone(a.AttrSecondary),
+		ReleasedAt:    a.ReleasedAt,
+	}
 }

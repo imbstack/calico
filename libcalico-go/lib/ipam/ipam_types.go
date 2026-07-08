@@ -112,6 +112,11 @@ type IPAMConfig struct {
 	// If non-zero, MaxBlocksPerHost specifies the max number of blocks that may
 	// be affine to a node.
 	MaxBlocksPerHost int
+
+	// IPCooldownSeconds is the minimum age of a released IP in a block before it is re-used.
+	// If set to zero, IPs can be re-used immediately (but are still handled with a FIFO queue to
+	// minimize immediate reuse).
+	IPCooldownSeconds int `json:"ipCooldownSeconds,omitempty"`
 }
 
 // GetUtilizationArgs defines the set of arguments for requesting IP utilization.

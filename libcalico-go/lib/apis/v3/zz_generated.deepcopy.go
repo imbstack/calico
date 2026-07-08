@@ -39,6 +39,10 @@ func (in *AllocationAttribute) DeepCopyInto(out *AllocationAttribute) {
 			(*out)[key] = val
 		}
 	}
+	if in.ReleasedAt != nil {
+		in, out := &in.ReleasedAt, &out.ReleasedAt
+		*out = (*in).DeepCopy()
+	}
 	return
 }
 
