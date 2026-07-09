@@ -1219,15 +1219,21 @@ func (c *IPAMController) garbageCollectColdIPs() error {
 	}
 	defer logIfSlow(time.Now(), "Block GC complete")
 
-	ctx, cancelCtx := context.WithTimeout(context.TODO(), 10*time.Second)
-	defer cancelCtx()
-
-	ipamConfig, err := c.client.IPAM().GetIPAMConfig(ctx)
+	cfgCtx, cancelCfgCtx := context.WithTimeout(context.TODO(), 30*time.Second)
+	ipamConfig, err := c.client.IPAM().GetIPAMConfig(cfgCtx)
+	cancelCfgCtx()
 	if err != nil {
 		return err
 	}
 	for cidr, kvp := range c.allBlocks {
-		if err := c.client.IPAM().GarbageCollectColdIPs(ctx, ipamConfig, &kvp); err != nil {
+		// Time out each block individually rather than sharing one deadline
+		// across the whole sweep: the number of blocks needing a write scales
+		// with cluster churn, and a shared budget makes the sweep abort partway
+		// through on large clusters regardless of the datastore being healthy.
+		ctx, cancelCtx := context.WithTimeout(context.TODO(), 30*time.Second)
+		err := c.client.IPAM().GarbageCollectColdIPs(ctx, ipamConfig, &kvp)
+		cancelCtx()
+		if err != nil {
 			switch err.(type) {
 			case cerrors.ErrorResourceUpdateConflict, cerrors.ErrorResourceDoesNotExist:
 				// Our cached copy of the block is stale - either it was written to
