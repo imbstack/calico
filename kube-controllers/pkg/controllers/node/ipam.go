@@ -1226,8 +1226,17 @@ func (c *IPAMController) garbageCollectColdIPs() error {
 	if err != nil {
 		return err
 	}
-	for _, kvp := range c.allBlocks {
+	for cidr, kvp := range c.allBlocks {
 		if err := c.client.IPAM().GarbageCollectColdIPs(ctx, ipamConfig, &kvp); err != nil {
+			switch err.(type) {
+			case cerrors.ErrorResourceUpdateConflict, cerrors.ErrorResourceDoesNotExist:
+				// Our cached copy of the block is stale - either it was written to
+				// since the syncer snapshot, or it has been deleted entirely. Don't
+				// fail the whole sync over it; the syncer will deliver the fresh
+				// state and the block will be GC'd on a subsequent sync.
+				log.WithError(err).WithField("block", cidr).Debug("Skipping cold IP GC for stale block")
+				continue
+			}
 			return err
 		}
 	}

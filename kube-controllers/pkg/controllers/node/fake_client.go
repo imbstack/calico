@@ -97,6 +97,24 @@ func (f *FakeCalicoClient) SetReleaseHostAffinityError(host string, err error) {
 	}
 }
 
+// SetColdGCError configures the fake IPAM client to return the given error from
+// GarbageCollectColdIPs for the specified block CIDR, simulating a stale-revision
+// conflict during the cold IP GC sweep. Pass nil to clear the error for a block.
+func (f *FakeCalicoClient) SetColdGCError(blockCIDR string, err error) {
+	if fic, ok := f.ipamClient.(*fakeIPAMClient); ok {
+		fic.Lock()
+		defer fic.Unlock()
+		if fic.coldGCErrors == nil {
+			fic.coldGCErrors = make(map[string]error)
+		}
+		if err == nil {
+			delete(fic.coldGCErrors, blockCIDR)
+		} else {
+			fic.coldGCErrors[blockCIDR] = err
+		}
+	}
+}
+
 // StagedGlobalNetworkPolicies returns an interface for managing staged global network policy resources.
 func (f *FakeCalicoClient) StagedGlobalNetworkPolicies() clientv3.StagedGlobalNetworkPolicyInterface {
 	panic("not implemented") // TODO: Implement
@@ -290,6 +308,18 @@ type fakeIPAMClient struct {
 	// should return, simulating per-node "block not empty" failures during cleanup.
 	releaseHostAffinityErrors map[string]error
 	garbageCollected          bool
+
+	// coldGCErrors maps block CIDRs to errors that GarbageCollectColdIPs should
+	// return, simulating stale-revision conflicts during the cold IP GC sweep.
+	coldGCErrors map[string]error
+	// coldGCSeen records the block CIDRs passed to GarbageCollectColdIPs.
+	coldGCSeen map[string]bool
+}
+
+func (f *fakeIPAMClient) coldGCVisited(blockCIDR string) bool {
+	f.Lock()
+	defer f.Unlock()
+	return f.coldGCSeen[blockCIDR]
 }
 
 func (f *fakeIPAMClient) affinityReleased(aff string) bool {
@@ -447,6 +477,14 @@ func (f *fakeIPAMClient) GarbageCollectColdIPs(ctx context.Context, config *ipam
 	f.Lock()
 	defer f.Unlock()
 	f.garbageCollected = true
+	cidr := kvp.Key.(model.BlockKey).CIDR.String()
+	if f.coldGCSeen == nil {
+		f.coldGCSeen = make(map[string]bool)
+	}
+	f.coldGCSeen[cidr] = true
+	if err, ok := f.coldGCErrors[cidr]; ok {
+		return err
+	}
 	return nil
 }
 
