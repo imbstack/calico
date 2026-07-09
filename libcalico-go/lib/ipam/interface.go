@@ -109,9 +109,12 @@ type Interface interface {
 	// UpgradeHost checks the resources related to the given node and, if it
 	// finds any that are in older formats, upgrades them.  It is idempotent.
 	UpgradeHost(ctx context.Context, nodeName string) error
-	// GarbageCollectColdIPs runs garbage collection on the given pre-loaded
-	// block, deallocating any released IPs whose cooldown period has elapsed.
-	// It writes the block back to the datastore if it was modified.
+	// GarbageCollectColdIPs runs garbage collection on the given block,
+	// deallocating any released IPs whose cooldown period has elapsed.
+	// The given (possibly cached) copy of the block is written back
+	// optimistically via CAS; if it turns out to be stale, the block is
+	// re-read and retried, so a stale cached revision does not produce
+	// spurious conflicts.
 	// Garbage collection is run by the CNI plugin every time a block is
 	// loaded, so this acts as a failsafe to ensure any otherwise-untouched
 	// blocks get collected.

@@ -1240,19 +1240,62 @@ func (c ipamClient) releaseIPsFromBlock(ctx context.Context, config *IPAMConfig,
 }
 
 func (c ipamClient) GarbageCollectColdIPs(ctx context.Context, config *IPAMConfig, kvp *model.KVPair) error {
+	// Check the caller's copy first; if there is nothing to collect in it, don't
+	// touch the datastore at all. The caller's copy is typically a cached one
+	// (e.g. from the kube-controllers syncer), so clone before mutating.
 	block := allocationBlock{kvp.Value.(*model.AllocationBlock)}.clone()
-	if block.garbageCollect(config.IPCooldownSeconds) {
-		log.WithField("cidr", kvp.Key).Debug("Cold IP GC: writing back GC'd block")
-		_, err := c.blockReaderWriter.updateBlock(ctx, &model.KVPair{
-			Key:      kvp.Key,
-			Value:    block.AllocationBlock,
-			Revision: kvp.Revision,
-			UID:      kvp.UID,
-		})
-		return err
+	if !block.garbageCollect(config.IPCooldownSeconds) {
+		return nil
 	}
 
-	return nil
+	blockCIDR := kvp.Key.(model.BlockKey).CIDR
+	logCtx := log.WithField("cidr", blockCIDR.String())
+
+	// First attempt writes the GC'd caller's copy, CAS'd on the caller's
+	// revision: if the cached copy is current this costs a single write, and a
+	// successful CAS proves the cache matched the datastore, so the result is
+	// identical to a fresh read-modify-write. If the cache is stale, subsequent
+	// attempts re-read so we GC and CAS against the latest revision instead.
+	obj := &model.KVPair{
+		Key:      kvp.Key,
+		Value:    block.AllocationBlock,
+		Revision: kvp.Revision,
+		UID:      kvp.UID,
+	}
+	for i := 0; i < datastoreRetries; i++ {
+		if i > 0 {
+			fresh, err := c.blockReaderWriter.queryBlock(ctx, blockCIDR, "")
+			if err != nil {
+				if _, ok := err.(cerrors.ErrorResourceDoesNotExist); ok {
+					// Block has been deleted; nothing left to collect.
+					return nil
+				}
+				return err
+			}
+			b := allocationBlock{fresh.Value.(*model.AllocationBlock)}
+			if !b.garbageCollect(config.IPCooldownSeconds) {
+				// The latest revision has nothing to collect; someone else got
+				// there first (e.g. GC-on-load by an allocation path).
+				return nil
+			}
+			obj = fresh
+		}
+
+		logCtx.Debug("Cold IP GC: writing back GC'd block")
+		if _, err := c.blockReaderWriter.updateBlock(ctx, obj); err != nil {
+			switch err.(type) {
+			case cerrors.ErrorResourceUpdateConflict:
+				logCtx.WithError(err).Debugf("CAS error in cold IP GC - retry #%d", i)
+				continue
+			case cerrors.ErrorResourceDoesNotExist:
+				// Block was deleted underneath us; nothing left to collect.
+				return nil
+			}
+			return err
+		}
+		return nil
+	}
+	return errors.New("Max retries hit - excessive concurrent IPAM requests")
 }
 
 func (c ipamClient) assignFromExistingBlock(ctx context.Context, config *IPAMConfig, block *model.KVPair, num int, handleID *string, attrs map[string]string, affinityCfg AffinityConfig, affCheck bool, reservations addrFilter) ([]net.IPNet, error) {
