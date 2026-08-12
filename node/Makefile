@@ -344,6 +344,10 @@ else
 WHAT=$(shell find . -name "*_test.go" | xargs dirname | sort -u)
 endif
 
+# Packages to exclude from the UT run. tests/k8st holds the Go k8st system
+# tests, which need a live kind cluster (run via kind-k8st-run-test).
+UT_PACKAGES_TO_SKIP?=tests/k8st
+
 ## Run the ginkgo tests.
 ut fv: $(LIBBPF_A) run-k8s-apiserver
 	mkdir -p report
