@@ -2460,10 +2460,14 @@ var _ = Describe("IPAM controller UTs", func() {
 	// first ErrorResourceUpdateConflict aborted syncIPAM before releaseUnusedBlocks and
 	// releaseNodes, so a single contended block starved deleted-node cleanup indefinitely.
 	It("should clean up deleted nodes even when cold IP GC hits update conflicts", func() {
-		c.Start(stopChan)
-
 		fakeClient := cli.IPAM().(*fakeIPAMClient)
 		fc := cli.(*FakeCalicoClient)
+
+		// Set the cooldown before starting the controller, so the sweep below can't
+		// race with this write.
+		fakeClient.config.IPCooldownSeconds = 3600
+
+		c.Start(stopChan)
 
 		// node-gc-a's block persistently fails cold GC with a CAS conflict, as happens
 		// when the syncer cache is stale relative to the datastore.
@@ -2485,11 +2489,16 @@ var _ = Describe("IPAM controller UTs", func() {
 			aff := fmt.Sprintf("host:%s", n.name)
 			handle := n.handle
 			idx := 0
+			// Each block also holds an IP whose cooldown has elapsed. Cold GC only
+			// visits blocks that have IPs in cooldown, so without one the sweep
+			// returns early and never reaches either block.
+			coldIdx := 1
+			releasedAt := metav1.NewTime(time.Now().Add(-2 * time.Hour))
 			b := model.AllocationBlock{
 				CIDR:        cidr,
 				Affinity:    &aff,
-				Allocations: []*int{&idx, nil, nil, nil},
-				Unallocated: []int{1, 2, 3},
+				Allocations: []*int{&idx, &coldIdx, nil, nil},
+				Unallocated: []int{2, 3},
 				Attributes: []model.AllocationAttribute{
 					{
 						HandleID: &handle,
@@ -2498,9 +2507,10 @@ var _ = Describe("IPAM controller UTs", func() {
 							ipam.AttributeType: ipam.AttributeTypeVXLAN,
 						},
 					},
+					{ReleasedAt: &releasedAt},
 				},
 			}
-			kvp := model.KVPair{Key: model.BlockKey{CIDR: model.PrefixFromIPNet(cidr)}, Value: &b}
+			kvp := model.KVPair{Key: model.BlockKey{CIDR: cidr}, Value: &b}
 			c.onUpdate(bapi.Update{KVPair: kvp, UpdateType: bapi.UpdateTypeKVNew})
 		}
 
