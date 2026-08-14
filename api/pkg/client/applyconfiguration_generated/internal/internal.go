@@ -1659,6 +1659,9 @@ var schemaYAML = typed.YAMLObject(`types:
       type:
         scalar: boolean
       default: false
+    - name: ipCooldownSeconds
+      type:
+        scalar: numeric
     - name: kubeVirtVMAddressPersistence
       type:
         scalar: string

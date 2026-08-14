@@ -76,6 +76,7 @@ type IPAMConfigSpec struct {
 	// +kubebuilder:validation:Enum=Enabled;Disabled
 	// +optional
 	KubeVirtVMAddressPersistence *VMAddressPersistence `json:"kubeVirtVMAddressPersistence,omitempty"`
+
 	// IPCooldownSeconds is the minimum age of a released IP in a block before it is re-used.
 	// If set to zero, IPs can be re-used immediately (but are still handled with a FIFO queue to
 	// minimize immediate reuse).

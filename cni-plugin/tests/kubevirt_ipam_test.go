@@ -230,6 +230,7 @@ func updateIPAMKubeVirtIPPersistence(calicoClient client.Interface, persistence 
 				AutoAllocateBlocks:           true,
 				MaxBlocksPerHost:             0,
 				KubeVirtVMAddressPersistence: persistence,
+				IPCooldownSeconds:            0,
 			},
 		}
 		_, err = calicoClient.IPAMConfiguration().Create(ctx, newConfig, options.SetOptions{})

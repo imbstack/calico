@@ -45,6 +45,11 @@ spec:
                 autoAllocateBlocks:
                   default: true
                   type: boolean
+                ipCooldownSeconds:
+                  format: int32
+                  maximum: 1200
+                  minimum: 0
+                  type: integer
                 kubeVirtVMAddressPersistence:
                   enum:
                     - Enabled
