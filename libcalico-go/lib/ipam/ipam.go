@@ -1900,6 +1900,10 @@ func (c ipamClient) ReleaseByHandle(ctx context.Context, handleID string) error 
 func (c ipamClient) releaseByHandle(ctx context.Context, config *IPAMConfig, blockCIDR net.IPNet, opts ReleaseOptions) error {
 	logCtx := log.WithFields(log.Fields{"handle": opts.Handle, "cidr": blockCIDR})
 	for i := range datastoreRetries {
+		logCtx.Debug("Querying block so we can release IPs by handle")
+		obj, err := c.blockReaderWriter.queryBlock(ctx, blockCIDR, "")
+		if err != nil {
+			if _, ok := err.(cerrors.ErrorResourceDoesNotExist); ok {
 				// Block doesn't exist, so all addresses are already
 				// unallocated.  This can happen when a handle is
 				// overestimating the number of assigned addresses.
@@ -2161,7 +2165,7 @@ func (c ipamClient) GetIPAMConfig(ctx context.Context) (*IPAMConfig, error) {
 					AutoAllocateBlocks:           true,
 					MaxBlocksPerHost:             0,
 					KubeVirtVMAddressPersistence: &enabled, // Default: enabled for auto-detection
-					IPCooldownSeconds:  0,
+					IPCooldownSeconds:            0,
 				},
 			}
 
@@ -2259,7 +2263,7 @@ func (c ipamClient) convertIPAMConfigToBackend(cfg *IPAMConfig) *model.IPAMConfi
 		AutoAllocateBlocks:           cfg.AutoAllocateBlocks,
 		MaxBlocksPerHost:             cfg.MaxBlocksPerHost,
 		KubeVirtVMAddressPersistence: persistence,
-		IPCooldownSeconds:  cfg.IPCooldownSeconds,
+		IPCooldownSeconds:            cfg.IPCooldownSeconds,
 	}
 }
 
@@ -2274,7 +2278,7 @@ func (c ipamClient) convertBackendToIPAMConfig(cfg *model.IPAMConfig) *IPAMConfi
 		AutoAllocateBlocks:           cfg.AutoAllocateBlocks,
 		MaxBlocksPerHost:             cfg.MaxBlocksPerHost,
 		KubeVirtVMAddressPersistence: persistence,
-		IPCooldownSeconds:  cfg.IPCooldownSeconds,
+		IPCooldownSeconds:            cfg.IPCooldownSeconds,
 	}
 }
 

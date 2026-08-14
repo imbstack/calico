@@ -390,7 +390,7 @@ type releaseAffinityOpts struct {
 // the host does not claim an affinity for the block.
 func (rw blockReaderWriter) releaseBlockAffinity(
 	ctx context.Context,
-	config *IPIPAMConfig,
+	config *IPAMConfig,
 	affinityCfg AffinityConfig,
 	blockCIDR cnet.IPNet,
 	opts releaseAffinityOpts,
