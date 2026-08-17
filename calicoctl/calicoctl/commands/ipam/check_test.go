@@ -340,7 +340,7 @@ var _ = Describe("CheckIPAM with Cooldown IPs", func() {
 		r, w, _ := os.Pipe()
 		os.Stdout = w
 
-		err := checker.CheckIPAM(ctx)
+		err := checker.checkIPAM(ctx)
 
 		_ = w.Close()
 		os.Stdout = old
