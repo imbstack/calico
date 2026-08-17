@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"net/netip"
 	"os"
 	"time"
 
@@ -327,7 +326,7 @@ var _ = Describe("CheckIPAM with Cooldown IPs", func() {
 			blocks: model.KVPairList{
 				KVPairs: []*model.KVPair{
 					{
-						Key:   model.BlockKey{CIDR: netip.MustParsePrefix("192.168.0.0/30")},
+						Key:   model.BlockKey{CIDR: net.MustParseCIDR("192.168.0.0/30")},
 						Value: block,
 					},
 				},

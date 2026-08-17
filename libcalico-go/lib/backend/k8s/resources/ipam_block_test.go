@@ -17,7 +17,6 @@ package resources
 import (
 	"context"
 	"encoding/json"
-	"net/netip"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,6 +30,7 @@ import (
 
 	"github.com/projectcalico/calico/libcalico-go/lib/apis/internalapi"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/model"
+	"github.com/projectcalico/calico/libcalico-go/lib/net"
 	cnet "github.com/projectcalico/calico/libcalico-go/lib/net"
 )
 
@@ -99,7 +99,7 @@ var _ = Describe("ipamBlockClient cooldown release round-trip", func() {
 
 		v1kvp := &model.KVPair{
 			Key: model.BlockKey{
-				CIDR: netip.MustParsePrefix("10.0.0.0/26"),
+				CIDR: net.MustParseCIDR("10.0.0.0/26"),
 			},
 			Value: &model.AllocationBlock{
 				CIDR:        netToIPNet("10.0.0.0/26"),
