@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/model"
 )
@@ -46,13 +47,13 @@ var _ = Describe("GarbageCollectColdIPs", func() {
 		// live allocation that should be left untouched.
 		tb := makeTestBlock()
 		tb.allocateAttrib([]int{coldOrd}, model.AllocationAttribute{
-			HandleID:   new("cold"),
-			ReleasedAt: new(v1.NewTime(time.Now().Add(-time.Hour))),
+			HandleID:   ptr.To("cold"),
+			ReleasedAt: ptr.To(v1.NewTime(time.Now().Add(-time.Hour))),
 		})
 		tb.allocate([]int{liveOrd}, "live")
 
 		blockKVP = &model.KVPair{
-			Key:      model.BlockKey{CIDR: model.PrefixFromIPNet(tb.CIDR)},
+			Key:      model.BlockKey{CIDR: tb.CIDR},
 			Value:    tb.AllocationBlock,
 			Revision: blockRev,
 			UID:      &blockUID,

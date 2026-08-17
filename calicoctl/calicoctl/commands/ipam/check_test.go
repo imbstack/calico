@@ -27,6 +27,7 @@ import (
 	apiv3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fakek8s "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/utils/ptr"
 
 	"github.com/projectcalico/calico/libcalico-go/lib/apis/internalapi"
 	bapi "github.com/projectcalico/calico/libcalico-go/lib/backend/api"
@@ -52,7 +53,7 @@ var _ = Describe("validateBlock", func() {
 	It("returns an error when an allocation references an invalid attr index", func() {
 		b := &model.AllocationBlock{
 			CIDR:        cidr,
-			Allocations: []*int{new(99), nil, nil, nil},
+			Allocations: []*int{ptr.To(99), nil, nil, nil},
 			Unallocated: []int{1, 2, 3},
 			Attributes:  []model.AllocationAttribute{},
 		}
@@ -63,7 +64,7 @@ var _ = Describe("validateBlock", func() {
 	It("returns an error when an allocation references a negative attr index", func() {
 		b := &model.AllocationBlock{
 			CIDR:        cidr,
-			Allocations: []*int{new(-1), nil, nil, nil},
+			Allocations: []*int{ptr.To(-1), nil, nil, nil},
 			Unallocated: []int{1, 2, 3},
 			Attributes:  []model.AllocationAttribute{},
 		}
@@ -77,7 +78,7 @@ var _ = Describe("validateBlock", func() {
 			Allocations: []*int{nil, nil, nil, nil},
 			Unallocated: []int{0, 1, 2, 3},
 			Attributes: []model.AllocationAttribute{
-				{HandleID: new("uhoh")},
+				{HandleID: ptr.To("uhoh")},
 			},
 		}
 		Expect(validateBlock(b)).
@@ -87,10 +88,10 @@ var _ = Describe("validateBlock", func() {
 	It("returns an error when an an attribute has ReleasedAt in the future", func() {
 		b := &model.AllocationBlock{
 			CIDR:        cidr,
-			Allocations: []*int{new(0), nil, nil, nil},
+			Allocations: []*int{ptr.To(0), nil, nil, nil},
 			Unallocated: []int{1, 2, 3},
 			Attributes: []model.AllocationAttribute{
-				{ReleasedAt: new(v1.NewTime(time.Now().Add(time.Minute)))},
+				{ReleasedAt: ptr.To(v1.NewTime(time.Now().Add(time.Minute)))},
 			},
 		}
 		Expect(validateBlock(b)).
@@ -111,10 +112,10 @@ var _ = Describe("validateBlock", func() {
 	It("returns an error when an allocated ordinal appears in Unallocated", func() {
 		b := &model.AllocationBlock{
 			CIDR:        cidr,
-			Allocations: []*int{nil, new(0), nil, nil},
+			Allocations: []*int{nil, ptr.To(0), nil, nil},
 			Unallocated: []int{0, 1, 2, 3},
 			Attributes: []model.AllocationAttribute{
-				{HandleID: new("allocated")},
+				{HandleID: ptr.To("allocated")},
 			},
 		}
 		Expect(validateBlock(b)).
@@ -135,10 +136,10 @@ var _ = Describe("validateBlock", func() {
 	It("returns an error if size of allocated an unallocated does not sum to NumAddresses", func() {
 		b := &model.AllocationBlock{
 			CIDR:        cidr,
-			Allocations: []*int{nil, new(0), new(0), nil},
+			Allocations: []*int{nil, ptr.To(0), ptr.To(0), nil},
 			Unallocated: []int{0},
 			Attributes: []model.AllocationAttribute{
-				{HandleID: new("hello")},
+				{HandleID: ptr.To("hello")},
 			},
 		}
 		Expect(validateBlock(b)).
@@ -313,7 +314,7 @@ var _ = Describe("CheckIPAM with Cooldown IPs", func() {
 
 		block := &model.AllocationBlock{
 			CIDR:        blockCIDR,
-			Allocations: []*int{new(0), nil, nil, nil},
+			Allocations: []*int{ptr.To(0), nil, nil, nil},
 			Unallocated: []int{1, 2, 3},
 			Attributes: []model.AllocationAttribute{
 				{

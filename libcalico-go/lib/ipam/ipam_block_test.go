@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/model"
 	cnet "github.com/projectcalico/calico/libcalico-go/lib/net"
@@ -192,12 +193,12 @@ var _ = Describe("Getting summary information about a block", func() {
 		block := makeTestBlock()
 		ip := cnet.ParseIP("100.64.0.32")
 		block.allocateAttrib([]int{32}, model.AllocationAttribute{
-			HandleID:            new("hand"),
+			HandleID:            ptr.To("hand"),
 			ActiveOwnerAttrs:    map[string]string{"is": "active"},
 			AlternateOwnerAttrs: map[string]string{"is": "alternate"},
 		})
 		Expect(block.allocationAttributesForIP(*ip)).To(SatisfyAll(
-			HaveField("HandleID", new("hand")),
+			HaveField("HandleID", ptr.To("hand")),
 			HaveField("ActiveOwnerAttrs", ConsistOf("active")),
 			HaveField("AlternateOwnerAttrs", ConsistOf("alternate")),
 		))
@@ -293,7 +294,7 @@ var _ = Describe("Releasing IPs", func() {
 		_, _, err := block.release(&noCooldownCfg, []ReleaseOptions{{
 			Address:        "100.64.0.13",
 			Handle:         "unlucky",
-			SequenceNumber: new(uint64(999)),
+			SequenceNumber: ptr.To(uint64(999)),
 		}})
 		Expect(err).ToNot(Succeed())
 
@@ -344,7 +345,7 @@ var _ = Describe("Releasing IPs by Handle", func() {
 
 		released := block.releaseByHandle(&noCooldownCfg, ReleaseOptions{
 			Handle:         "teens",
-			SequenceNumber: new(uint64(10)),
+			SequenceNumber: ptr.To(uint64(10)),
 		})
 		Expect(released).To(Equal(3))
 		Expect(block.allocatedOrdinals()).To(Equal([]int{17}), "mismatched allocation not freed")
@@ -398,8 +399,8 @@ var _ = Describe("Block garbage collection", func() {
 		block := makeTestBlock()
 		// Add some spurious attributes.
 		block.Attributes = append(block.Attributes,
-			model.AllocationAttribute{HandleID: new("spurious1")},
-			model.AllocationAttribute{HandleID: new("spurious2")},
+			model.AllocationAttribute{HandleID: ptr.To("spurious1")},
+			model.AllocationAttribute{HandleID: ptr.To("spurious2")},
 		)
 		// Add a regular allocation.
 		block.allocate([]int{32}, "thirty-two")
@@ -415,11 +416,11 @@ var _ = Describe("Block garbage collection", func() {
 		block := makeTestBlock()
 		// 31,33 are ready to deallocate.
 		block.allocateAttrib([]int{31, 33}, model.AllocationAttribute{
-			ReleasedAt: new(v1.NewTime(time.Now().Add(-time.Minute))),
+			ReleasedAt: ptr.To(v1.NewTime(time.Now().Add(-time.Minute))),
 		})
 		// 42,44 are not.
 		block.allocateAttrib([]int{42, 44}, model.AllocationAttribute{
-			ReleasedAt: new(v1.NewTime(time.Now().Add(time.Minute))),
+			ReleasedAt: ptr.To(v1.NewTime(time.Now().Add(time.Minute))),
 		})
 		// 50,51 are not relased yet.
 		block.allocate([]int{52, 54}, "fifties")
