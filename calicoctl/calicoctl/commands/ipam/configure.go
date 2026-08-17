@@ -191,7 +191,7 @@ Description:
 		}
 	}
 
-	if strictAffinity == nil && maxBlocks == nil && persistence == nil {
+	if strictAffinity == nil && maxBlocks == nil && persistence == nil && ipCooldownSeconds == nil {
 		return fmt.Errorf("at least one configuration option must be specified")
 	}
 
