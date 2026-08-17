@@ -749,7 +749,7 @@ var _ = Describe("IPAM controller UTs", func() {
 				Unallocated: []int{1, 2, 3},
 				Attributes:  []model.AllocationAttribute{{ReleasedAt: &releasedAt}},
 			}
-			return model.KVPair{Key: model.BlockKey{CIDR: model.PrefixFromIPNet(cidr)}, Value: &b}
+			return model.KVPair{Key: model.BlockKey{CIDR: cidr}, Value: &b}
 		}
 
 		// liveBlock builds a block affine to cnode with a single normal allocation
@@ -769,7 +769,7 @@ var _ = Describe("IPAM controller UTs", func() {
 					ActiveOwnerAttrs: map[string]string{ipam.AttributeNode: "cnode"},
 				}},
 			}
-			return model.KVPair{Key: model.BlockKey{CIDR: model.PrefixFromIPNet(cidr)}, Value: &b}
+			return model.KVPair{Key: model.BlockKey{CIDR: cidr}, Value: &b}
 		}
 
 		BeforeEach(func() {
@@ -841,7 +841,7 @@ var _ = Describe("IPAM controller UTs", func() {
 		// at the block's current sequence number (10).
 		cidr := net.MustParseCIDR("10.0.0.0/30")
 		aff := "host:cnode"
-		key := model.BlockKey{CIDR: model.PrefixFromIPNet(cidr)}
+		key := model.BlockKey{CIDR: cidr}
 		idx := 0
 		handle := "test-handle"
 		b := model.AllocationBlock{
@@ -2591,7 +2591,7 @@ var _ = Describe("IPAM controller UTs", func() {
 					},
 				},
 			}
-			kvp := model.KVPair{Key: model.BlockKey{CIDR: model.PrefixFromIPNet(cidr)}, Value: &b}
+			kvp := model.KVPair{Key: model.BlockKey{CIDR: cidr}, Value: &b}
 			c.onUpdate(bapi.Update{KVPair: kvp, UpdateType: bapi.UpdateTypeKVNew})
 		}
 
