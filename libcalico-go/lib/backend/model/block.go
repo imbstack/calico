@@ -208,6 +208,7 @@ func (b *AllocationBlock) Clone() *AllocationBlock {
 	return &AllocationBlock{
 		CIDR:                        b.CIDR,
 		Affinity:                    b.Affinity,
+		AffinityClaimTime:           b.AffinityClaimTime,
 		Allocations:                 slices.Clone(b.Allocations),
 		Unallocated:                 slices.Clone(b.Unallocated),
 		Attributes:                  slices.Clone(attributes),

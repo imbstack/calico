@@ -16,8 +16,10 @@ package migration
 
 import (
 	"testing"
+	"time"
 
 	apiv3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
@@ -99,6 +101,53 @@ func TestConvertIPAMBlock(t *testing.T) {
 	}
 	if block.Spec.Deleted {
 		t.Error("expected Deleted=false")
+	}
+}
+
+// TestConvertIPAMBlock_Cooldown checks that the timestamps that drive IP cooldown
+// survive the v1 -> v3 migration. Dropping ReleasedAt would strand the ordinal:
+// garbageCollect only reclaims allocations whose attribute has a ReleasedAt.
+func TestConvertIPAMBlock_Cooldown(t *testing.T) {
+	claimTime := metav1.NewTime(time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC))
+	releasedAt := metav1.NewTime(time.Date(2026, 8, 28, 12, 5, 0, 0, time.UTC))
+	handle := "k8s-pod-network.abc123"
+
+	kvp := &model.KVPair{
+		Value: &model.AllocationBlock{
+			CIDR:              cnet.MustParseCIDR("10.0.2.0/30"),
+			Affinity:          ptr.To("host:node-1"),
+			AffinityClaimTime: &claimTime,
+			Allocations:       []*int{ptr.To(0), ptr.To(1), nil, nil},
+			Unallocated:       []int{2, 3},
+			Attributes: []model.AllocationAttribute{
+				{
+					HandleID:         &handle,
+					ActiveOwnerAttrs: map[string]string{"pod": "nginx-abc123"},
+				},
+				{
+					// An IP in cooldown: no handle, just a release timestamp.
+					ReleasedAt: &releasedAt,
+				},
+			},
+		},
+	}
+
+	block, err := convertIPAMBlock(kvp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(block.Spec.Attributes) != 2 {
+		t.Fatalf("expected 2 attributes, got %d", len(block.Spec.Attributes))
+	}
+	if block.Spec.Attributes[0].ReleasedAt != nil {
+		t.Errorf("expected no ReleasedAt on the in-use attribute, got %v", block.Spec.Attributes[0].ReleasedAt)
+	}
+	if got := block.Spec.Attributes[1].ReleasedAt; got == nil || !got.Equal(&releasedAt) {
+		t.Errorf("expected ReleasedAt %v on the cooldown attribute, got %v", releasedAt, got)
+	}
+	if got := block.Spec.AffinityClaimTime; got == nil || !got.Equal(&claimTime) {
+		t.Errorf("expected AffinityClaimTime %v, got %v", claimTime, got)
 	}
 }
 

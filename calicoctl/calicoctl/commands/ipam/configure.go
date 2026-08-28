@@ -1,4 +1,4 @@
-// Copyright (c) 2016,2020 Tigera, Inc. All rights reserved.
+// Copyright (c) 2016,2020,2026 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -96,11 +96,14 @@ func parsePersistence(val string) (*ipam.VMAddressPersistence, error) {
 	}
 }
 
-// Configure IPAM.
-func Configure(args []string) error {
+// configureDoc returns the docopt usage text for `ipam configure`, with
+// <BINARY_NAME> substituted. Every option in the Options: section must also
+// appear in the Usage: pattern, or docopt rejects it on the command line.
+func configureDoc() string {
 	doc := constants.DatastoreIntro + `Usage:
   <BINARY_NAME> ipam configure [--strictaffinity=<true/false>]
                                [--max-blocks-per-host=<number>]
+                               [--ip-cooldown-seconds=<number>]
                                [--kubevirt-ip-persistence=<Enabled|Disabled>]
                                [--config=<CONFIG>]
                                [--allow-version-mismatch]
@@ -126,9 +129,12 @@ Description:
 `
 	// Replace all instances of BINARY_NAME with the name of the binary.
 	name, _ := util.NameAndDescription()
-	doc = strings.ReplaceAll(doc, "<BINARY_NAME>", name)
+	return strings.ReplaceAll(doc, "<BINARY_NAME>", name)
+}
 
-	parsedArgs, err := docopt.ParseArgs(doc, args, "")
+// Configure IPAM.
+func Configure(args []string) error {
+	parsedArgs, err := docopt.ParseArgs(configureDoc(), args, "")
 	if err != nil {
 		return fmt.Errorf("invalid option: 'calicoctl %s'. Use flag '--help' to read about a specific subcommand", strings.Join(args, " "))
 	}

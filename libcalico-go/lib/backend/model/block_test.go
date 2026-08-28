@@ -1,4 +1,4 @@
-// Copyright (c) 2019 Tigera, Inc. All rights reserved.
+// Copyright (c) 2019-2026 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,8 +15,12 @@
 package model_test
 
 import (
+	"reflect"
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/model"
 	"github.com/projectcalico/calico/libcalico-go/lib/net"
@@ -58,6 +62,70 @@ var _ = Describe("AllocationBlock tests", func() {
 			model.Allocation{Host: "anotherhost", Addr: *net.ParseIP("10.0.1.2")},
 			model.Allocation{Host: "anotherhost", Addr: *net.ParseIP("10.0.1.7")},
 		))
+	})
+
+	Describe("Clone", func() {
+		// fullyPopulatedBlock sets every field of AllocationBlock to a non-zero
+		// value, so that the round-trip check below fails if Clone() forgets one.
+		fullyPopulatedBlock := func() model.AllocationBlock {
+			claimTime := metav1.NewTime(time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC))
+			releasedAt := metav1.NewTime(time.Date(2026, 8, 28, 12, 5, 0, 0, time.UTC))
+			affinity := "host:myhost"
+			hostAffinity := "myhost"
+			handle := "k8s-pod-network.abc123"
+			return model.AllocationBlock{
+				CIDR:              mustParseCIDR("10.0.1.0/30"),
+				Affinity:          &affinity,
+				AffinityClaimTime: &claimTime,
+				Allocations:       []*int{intPtr(0), intPtr(1), nil, nil},
+				Unallocated:       []int{2, 3},
+				Attributes: []model.AllocationAttribute{
+					{
+						HandleID:            &handle,
+						ActiveOwnerAttrs:    map[string]string{"pod": "nginx"},
+						AlternateOwnerAttrs: map[string]string{"pod": "nginx-old"},
+					},
+					{
+						// An IP in cooldown: pointed at by an allocation, but
+						// carrying only a release timestamp.
+						ReleasedAt: &releasedAt,
+					},
+				},
+				SequenceNumber:              5,
+				SequenceNumberForAllocation: map[string]uint64{"0": 4, "1": 5},
+				Deleted:                     true,
+				HostAffinity:                &hostAffinity,
+			}
+		}
+
+		It("should populate every field in the test fixture", func() {
+			// Guard for the round-trip test below: if a field is added to
+			// AllocationBlock, this fails until the fixture covers it.
+			b := fullyPopulatedBlock()
+			v := reflect.ValueOf(b)
+			for i := range v.NumField() {
+				name := v.Type().Field(i).Name
+				Expect(v.Field(i).IsZero()).To(BeFalse(), "field %s is not set in fullyPopulatedBlock", name)
+			}
+		})
+
+		It("should copy every field", func() {
+			b := fullyPopulatedBlock()
+			Expect(*b.Clone()).To(Equal(b))
+		})
+
+		It("should not share mutable state with the original", func() {
+			b := fullyPopulatedBlock()
+			c := b.Clone()
+
+			c.Allocations[0] = nil
+			c.Unallocated[0] = 99
+			c.Attributes[0].ActiveOwnerAttrs["pod"] = "changed"
+			c.Attributes[0].AlternateOwnerAttrs["pod"] = "changed"
+			c.SequenceNumberForAllocation["0"] = 99
+
+			Expect(b).To(Equal(fullyPopulatedBlock()))
+		})
 	})
 
 	DescribeTable("CIDR table tests",
