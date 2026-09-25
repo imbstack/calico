@@ -55,15 +55,17 @@ func init() {
 type PolicyResolver struct {
 	policyIDToEndpointIDs multidict.Multidict[model.PolicyKey, model.EndpointKey]
 	endpointIDToPolicyIDs multidict.Multidict[model.EndpointKey, model.PolicyKey]
-	allPolicies           map[model.PolicyKey]policyMetadata // Only storing metadata for lower occupancy.
-	sortedTierData        []*TierInfo
-	endpoints             map[model.Key]model.Endpoint // Local WEPs/HEPs only.
-	dirtyEndpoints        set.Set[model.EndpointKey]
-	endpointComputedData  map[model.WorkloadEndpointKey]map[EndpointComputedDataKind]EndpointComputedData
-	policySorter          *PolicySorter
-	Callbacks             []PolicyResolverCallbacks
-	InSync                bool
-	endpointBGPPeerData   map[model.WorkloadEndpointKey]EndpointBGPPeer
+	// Active per-namespace copies of same() policies, indexed by parent key (see same_namespace.go).
+	parentToVirtualKeys  multidict.Multidict[model.PolicyKey, model.PolicyKey]
+	allPolicies          map[model.PolicyKey]policyMetadata // Only storing metadata for lower occupancy.
+	sortedTierData       []*TierInfo
+	endpoints            map[model.Key]model.Endpoint // Local WEPs/HEPs only.
+	dirtyEndpoints       set.Set[model.EndpointKey]
+	endpointComputedData map[model.WorkloadEndpointKey]map[EndpointComputedDataKind]EndpointComputedData
+	policySorter         *PolicySorter
+	Callbacks            []PolicyResolverCallbacks
+	InSync               bool
+	endpointBGPPeerData  map[model.WorkloadEndpointKey]EndpointBGPPeer
 
 	// Track policy updates as they come in - these will be resolved on flush.
 	pendingPolicyUpdates set.Set[model.PolicyKey]
@@ -79,6 +81,7 @@ func NewPolicyResolver() *PolicyResolver {
 	return &PolicyResolver{
 		policyIDToEndpointIDs: multidict.New[model.PolicyKey, model.EndpointKey](),
 		endpointIDToPolicyIDs: multidict.New[model.EndpointKey, model.PolicyKey](),
+		parentToVirtualKeys:   multidict.New[model.PolicyKey, model.PolicyKey](),
 		allPolicies:           map[model.PolicyKey]policyMetadata{},
 		endpoints:             make(map[model.Key]model.Endpoint),
 		endpointComputedData:  make(map[model.WorkloadEndpointKey]map[EndpointComputedDataKind]EndpointComputedData),
@@ -124,11 +127,19 @@ func (pr *PolicyResolver) OnUpdate(update api.Update) (filterOut bool) {
 			policy := update.Value.(*model.Policy)
 			pr.allPolicies[key] = ExtractPolicyMetadata(policy)
 		}
-		// TODO(NET-55): the per-namespace copies of a same() policy are tracked under virtual
-		// keys (see same_namespace.go), so key itself may be inactive while its copies are active.
-		// Keep an index from parent key to active virtual keys (populate it in OnPolicyMatch, prune
-		// it in OnPolicyMatchStopped) and, for each active copy, update the sorter with the new
-		// metadata and mark its endpoints dirty.
+		// The per-namespace copies of a same() policy share its metadata, so re-sort them too.
+		pr.parentToVirtualKeys.Iter(key, func(vk model.PolicyKey) {
+			var metadata *policyMetadata
+			if update.Value != nil {
+				m := pr.allPolicies[key]
+				metadata = &m
+			} else {
+				pr.pendingPolicyUpdates.Discard(vk)
+			}
+			if pr.policySorter.UpdatePolicy(vk, metadata) {
+				pr.markEndpointsMatchingPolicyDirty(vk)
+			}
+		})
 		if !pr.policyIDToEndpointIDs.ContainsKey(key) {
 			return
 		}
@@ -174,6 +185,9 @@ func (pr *PolicyResolver) OnPolicyMatch(policyKey model.PolicyKey, endpointKey m
 	}
 	pr.policyIDToEndpointIDs.Put(policyKey, endpointKey)
 	pr.endpointIDToPolicyIDs.Put(endpointKey, policyKey)
+	if IsVirtualPolicyKey(policyKey) {
+		pr.parentToVirtualKeys.Put(ParentPolicyKey(policyKey), policyKey)
+	}
 	pr.dirtyEndpoints.Add(endpointKey)
 }
 
@@ -185,6 +199,9 @@ func (pr *PolicyResolver) OnPolicyMatchStopped(policyKey model.PolicyKey, endpoi
 	// This policy is not active anymore, we no longer need to track it for sorting.
 	if !pr.policyIDToEndpointIDs.ContainsKey(policyKey) {
 		pr.policySorter.UpdatePolicy(policyKey, nil)
+		if IsVirtualPolicyKey(policyKey) {
+			pr.parentToVirtualKeys.Discard(ParentPolicyKey(policyKey), policyKey)
+		}
 	}
 
 	pr.dirtyEndpoints.Add(endpointKey)
