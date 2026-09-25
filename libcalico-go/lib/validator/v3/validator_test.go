@@ -2640,6 +2640,115 @@ func init() {
 				},
 			}, true,
 		),
+		Entry("allow same() in GlobalNetworkPolicy EntityRule namespaceSelector fields",
+			&api.GlobalNetworkPolicy{
+				ObjectMeta: v1.ObjectMeta{Name: "thing"},
+				Spec: api.GlobalNetworkPolicySpec{
+					Ingress: []api.Rule{
+						{
+							Action: "Allow",
+							Source: api.EntityRule{
+								NamespaceSelector: "same()",
+								Selector:          "role == 'db'",
+							},
+						},
+					},
+					Egress: []api.Rule{
+						{
+							Action: "Allow",
+							Destination: api.EntityRule{
+								NamespaceSelector: "same()",
+							},
+						},
+					},
+				},
+			}, true,
+		),
+		Entry("disallow same() combined with other namespaceSelector terms",
+			&api.GlobalNetworkPolicy{
+				ObjectMeta: v1.ObjectMeta{Name: "thing"},
+				Spec: api.GlobalNetworkPolicySpec{
+					Ingress: []api.Rule{
+						{
+							Action: "Allow",
+							Source: api.EntityRule{
+								NamespaceSelector: "same() && foo == 'bar'",
+							},
+						},
+					},
+				},
+			}, false,
+		),
+		Entry("disallow same() in EntityRule selector field",
+			&api.GlobalNetworkPolicy{
+				ObjectMeta: v1.ObjectMeta{Name: "thing"},
+				Spec: api.GlobalNetworkPolicySpec{
+					Ingress: []api.Rule{
+						{
+							Action: "Allow",
+							Source: api.EntityRule{
+								Selector: "same()",
+							},
+						},
+					},
+				},
+			}, false,
+		),
+		Entry("disallow same() in GlobalNetworkPolicy namespaceSelector field",
+			&api.GlobalNetworkPolicy{
+				ObjectMeta: v1.ObjectMeta{Name: "thing"},
+				Spec: api.GlobalNetworkPolicySpec{
+					NamespaceSelector: "same()",
+				},
+			}, false,
+		),
+		Entry("allow same() in StagedGlobalNetworkPolicy EntityRule namespaceSelector field",
+			&api.StagedGlobalNetworkPolicy{
+				ObjectMeta: v1.ObjectMeta{Name: "thing"},
+				Spec: api.StagedGlobalNetworkPolicySpec{
+					StagedAction: api.StagedActionSet,
+					Ingress: []api.Rule{
+						{
+							Action: "Allow",
+							Source: api.EntityRule{
+								NamespaceSelector: "same()",
+							},
+						},
+					},
+				},
+			}, true,
+		),
+		Entry("disallow same() in StagedNetworkPolicy EntityRule namespaceSelector field",
+			&api.StagedNetworkPolicy{
+				ObjectMeta: v1.ObjectMeta{Name: "thing", Namespace: "default"},
+				Spec: api.StagedNetworkPolicySpec{
+					StagedAction: api.StagedActionSet,
+					Egress: []api.Rule{
+						{
+							Action: "Allow",
+							Destination: api.EntityRule{
+								NamespaceSelector: "same()",
+							},
+						},
+					},
+				},
+			}, false,
+		),
+		Entry("disallow same() in Profile EntityRule namespaceSelector field",
+			&api.Profile{
+				ObjectMeta: v1.ObjectMeta{Name: "thing"},
+				Spec: api.ProfileSpec{
+					Ingress: []api.Rule{
+						{
+							Action: "Allow",
+							Source: api.EntityRule{
+								NamespaceSelector: "same()",
+							},
+						},
+					},
+				},
+			}, false,
+		),
 
 		// StagedGlobalNetworkPolicySpec Types field checks.
 		Entry("disallow name with invalid character", &api.StagedGlobalNetworkPolicy{
@@ -3153,6 +3262,21 @@ func init() {
 					},
 				},
 			}, true,
+		),
+		Entry("disallow same() in NetworkPolicy EntityRule namespaceSelector field",
+			&api.NetworkPolicy{
+				ObjectMeta: v1.ObjectMeta{Name: "thing", Namespace: "default"},
+				Spec: api.NetworkPolicySpec{
+					Ingress: []api.Rule{
+						{
+							Action: "Allow",
+							Source: api.EntityRule{
+								NamespaceSelector: "same()",
+							},
+						},
+					},
+				},
+			}, false,
 		),
 		Entry("allow a Service match in an egress rule destination",
 			&api.NetworkPolicy{

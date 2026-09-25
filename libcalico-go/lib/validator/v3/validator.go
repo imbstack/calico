@@ -122,6 +122,7 @@ var (
 	protocolAndHTTPMsg            = "rules that specify HTTP fields must set protocol to TCP or empty"
 	globalSelectorEntRule         = fmt.Sprintf("%v can only be used in an EntityRule namespaceSelector", globalSelector)
 	globalSelectorOnly            = fmt.Sprintf("%v cannot be combined with other selectors", globalSelector)
+	sameNamespaceSelectorGlobal   = fmt.Sprintf("%v namespaceSelector can only be used in GlobalNetworkPolicy rules", api.SameNamespaceSelector)
 
 	SourceAddressRegex = regexp.MustCompile("^(UseNodeIP|None)$")
 
@@ -212,6 +213,7 @@ func init() {
 	registerFieldValidator("name", validateName)
 	registerFieldValidator("containerID", validateContainerID)
 	registerFieldValidator("selector", validateSelector)
+	registerFieldValidator("ruleNamespaceSelector", ValidateRuleNamespaceSelector)
 	registerFieldValidator("labels", validateLabels)
 	registerFieldValidator("ipVersion", validateIPVersion)
 	registerFieldValidator("ipIpMode", validateIPIPMode)
@@ -294,6 +296,7 @@ func init() {
 	registerStructValidator(validate, validateBGPFilterRuleV4, api.BGPFilterRuleV4{})
 	registerStructValidator(validate, validateBGPFilterRuleV6, api.BGPFilterRuleV6{})
 	registerStructValidator(validate, validateBGPFilterOperation, api.BGPFilterOperation{})
+	registerStructValidator(validate, validateProfileSpec, api.ProfileSpec{})
 	registerStructValidator(validate, validateNetworkPolicy, api.NetworkPolicy{})
 	registerStructValidator(validate, validateGlobalNetworkPolicy, api.GlobalNetworkPolicy{})
 	registerStructValidator(validate, validateStagedGlobalNetworkPolicy, api.StagedGlobalNetworkPolicy{})
@@ -624,6 +627,16 @@ func validateSelector(fl validator.FieldLevel) bool {
 		return false
 	}
 	return true
+}
+
+// ValidateRuleNamespaceSelector validates an EntityRule's namespaceSelector, which may be a normal
+// selector or the special same() value.  Whether same() is allowed for the enclosing resource is
+// checked by that resource's validator.
+func ValidateRuleNamespaceSelector(fl validator.FieldLevel) bool {
+	if fl.Field().String() == api.SameNamespaceSelector {
+		return true
+	}
+	return validateSelector(fl)
 }
 
 func validateTag(fl validator.FieldLevel) bool {
@@ -1840,6 +1853,10 @@ func validateNetworkPolicySpec(spec *api.NetworkPolicySpec, structLevel validato
 		}
 	}
 
+	// A namespaced policy's rules already default to its own namespace, so same() is not needed.
+	disallowSameNamespaceSelector(spec.Ingress, structLevel)
+	disallowSameNamespaceSelector(spec.Egress, structLevel)
+
 	// Check that the selector doesn't have the global() selector which is only
 	// valid as an EntityRule namespaceSelector.
 	if strings.Contains(spec.Selector, globalSelector) {
@@ -1859,6 +1876,27 @@ func validateNetworkPolicySpec(spec *api.NetworkPolicySpec, structLevel validato
 			reason(globalSelectorEntRule),
 			"")
 	}
+}
+
+// disallowSameNamespaceSelector reports an error for each rule that uses the same() namespaceSelector,
+// which is only meaningful in GlobalNetworkPolicy rules.
+func disallowSameNamespaceSelector(rules []api.Rule, structLevel validator.StructLevel) {
+	for _, r := range rules {
+		for _, er := range []api.EntityRule{r.Source, r.Destination} {
+			if er.NamespaceSelector == api.SameNamespaceSelector {
+				structLevel.ReportError(
+					reflect.ValueOf(er.NamespaceSelector), "NamespaceSelector", "",
+					reason(sameNamespaceSelectorGlobal), "",
+				)
+			}
+		}
+	}
+}
+
+func validateProfileSpec(structLevel validator.StructLevel) {
+	spec := structLevel.Current().Interface().(api.ProfileSpec)
+	disallowSameNamespaceSelector(spec.Ingress, structLevel)
+	disallowSameNamespaceSelector(spec.Egress, structLevel)
 }
 
 func validateNetworkPolicy(structLevel validator.StructLevel) {
