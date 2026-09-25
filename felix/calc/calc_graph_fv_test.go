@@ -621,6 +621,25 @@ var baseTests = []StateList{
 	// Live migration: local WEP as target by direct name, then LM removed.
 	{localEp1WithPolicyLMTargetByName, localEp1WithPolicy},
 
+	// same() namespaceSelector: per-namespace copies appear and disappear with the local
+	// endpoints in each namespace; host endpoints get the unexpanded policy.
+	{
+		sameNsTwoNamespaces,
+		sameNsOneNamespace,
+		sameNsWithHostEp,
+	},
+	// same() namespaceSelector: switching the policy to a plain selector and back.
+	{
+		sameNsOneNamespace,
+		sameNsSwitchedToPlain,
+		sameNsOneNamespace,
+	},
+	// same() namespaceSelector: changing the parent's order re-sorts its copies.
+	{
+		sameNsWithOtherPolicy,
+		sameNsWithOtherPolicyReordered,
+	},
+
 	// Istio tests - verify that the all-istio-weps IPSet is populated correctly
 	{
 		istioWithAmbientPod,

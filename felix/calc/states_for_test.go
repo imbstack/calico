@@ -30,6 +30,7 @@ import (
 	"github.com/projectcalico/calico/libcalico-go/lib/apis/internalapi"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/k8s/conversion"
 	. "github.com/projectcalico/calico/libcalico-go/lib/backend/model"
+	"github.com/projectcalico/calico/libcalico-go/lib/backend/syncersv1/updateprocessors"
 	calinet "github.com/projectcalico/calico/libcalico-go/lib/net"
 )
 
@@ -3686,3 +3687,205 @@ func namespaceToProfile(ns *kapiv1.Namespace) *v3.Profile {
 func stringPtr(s string) *string {
 	return &s
 }
+
+// States for the same() namespaceSelector.  The policy's same() rule is expanded into a copy of the
+// policy per namespace of the local workload endpoints that it matches; host endpoints get the
+// unexpanded policy, whose same() rule matches nothing.
+
+var sameNsPolicyKey = PolicyKey{Name: "same-ns", Kind: v3.KindGlobalNetworkPolicy}
+
+func sameNsPolicyID(ns string) types.PolicyID {
+	return types.PolicyID{Name: "same-ns", Namespace: ns, Kind: v3.KindGlobalNetworkPolicy}
+}
+
+var sameNsPolicy = Policy{
+	Tier:     "default",
+	Order:    &order20,
+	Selector: "app == 'x'",
+	InboundRules: []Rule{
+		{
+			SrcSelector:                  updateprocessors.SameNamespacePlaceholderSelector,
+			OriginalSrcNamespaceSelector: v3.SameNamespaceSelector,
+		},
+	},
+	Types: []string{"ingress"},
+}
+
+// sameNsPlainPolicy is sameNsPolicy with the same() rule replaced by a plain selector.
+var sameNsPlainPolicy = Policy{
+	Tier:     "default",
+	Order:    &order20,
+	Selector: "app == 'x'",
+	InboundRules: []Rule{
+		{SrcSelector: "app == 'x'"},
+	},
+	Types: []string{"ingress"},
+}
+
+// sameNsOtherPolicy is a second policy on the same endpoints, used to check that the per-namespace
+// copies are re-sorted when the parent's order changes.
+var sameNsOtherPolicyKey = PolicyKey{Name: "other", Kind: v3.KindGlobalNetworkPolicy}
+var sameNsOtherPolicyID = types.PolicyID{Name: "other", Kind: v3.KindGlobalNetworkPolicy}
+var sameNsOtherPolicy = Policy{
+	Tier:         "default",
+	Order:        &order20,
+	Selector:     "app == 'x'",
+	InboundRules: []Rule{{Action: "allow"}},
+	Types:        []string{"ingress"},
+}
+
+func sameNsWep(ns, pod, ip string) (WorkloadEndpointKey, *WorkloadEndpoint) {
+	key := WorkloadEndpointKey{Hostname: localHostname, OrchestratorID: "k8s", WorkloadID: ns + "/" + pod, EndpointID: "eth0"}
+	wep := &WorkloadEndpoint{
+		State:    "active",
+		Name:     "cali-" + pod,
+		Mac:      mustParseMac("01:02:03:04:05:06"),
+		IPv4Nets: []calinet.IPNet{mustParseNet(ip + "/32")},
+		Labels: uniquelabels.Make(map[string]string{
+			"app":                "x",
+			v3.LabelNamespace:    ns,
+			v3.LabelOrchestrator: "k8s",
+		}),
+	}
+	return key, wep
+}
+
+var (
+	sameNsWepKeyA, sameNsWepA = sameNsWep("ns1", "a", "10.9.1.1")
+	sameNsWepKeyB, sameNsWepB = sameNsWep("ns1", "b", "10.9.1.2")
+	sameNsWepKeyC, sameNsWepC = sameNsWep("ns2", "c", "10.9.2.1")
+	sameNsWepIdA              = "k8s/ns1/a/eth0"
+	sameNsWepIdB              = "k8s/ns1/b/eth0"
+	sameNsWepIdC              = "k8s/ns2/c/eth0"
+)
+
+var sameNsHostEpKey = HostEndpointKey{Hostname: localHostname, EndpointID: "same-ns-hep"}
+var sameNsHostEpId = "same-ns-hep"
+var sameNsHostEp = HostEndpoint{
+	Name:   "eth1",
+	Labels: uniquelabels.Make(map[string]string{"app": "x"}),
+}
+
+var (
+	sameNsNs1SelectorId         = selectorID("projectcalico.org/namespace == 'ns1'")
+	sameNsNs2SelectorId         = selectorID("projectcalico.org/namespace == 'ns2'")
+	sameNsPlaceholderSelectorId = selectorID(updateprocessors.SameNamespacePlaceholderSelector)
+	sameNsAppXSelectorId        = selectorID("app == 'x'")
+)
+
+func sameNsLocalRoute(ip string) types.RouteUpdate {
+	return types.RouteUpdate{
+		Types:         proto.RouteType_LOCAL_WORKLOAD,
+		Dst:           ip + "/32",
+		DstNodeName:   localHostname,
+		LocalWorkload: true,
+	}
+}
+
+func sameNsIngressTiers(ids ...types.PolicyID) []mock.TierInfo {
+	return []mock.TierInfo{{Name: "default", IngressPolicies: ids}}
+}
+
+// sameNsTwoNamespaces has local endpoints in ns1 and ns2, so the policy has a copy for each.
+var sameNsTwoNamespaces = initialisedStore.withKVUpdates(
+	KVPair{Key: sameNsPolicyKey, Value: &sameNsPolicy},
+	KVPair{Key: sameNsWepKeyA, Value: sameNsWepA},
+	KVPair{Key: sameNsWepKeyB, Value: sameNsWepB},
+	KVPair{Key: sameNsWepKeyC, Value: sameNsWepC},
+).withIPSet(sameNsNs1SelectorId, []string{
+	"10.9.1.1/32",
+	"10.9.1.2/32",
+}).withIPSet(sameNsNs2SelectorId, []string{
+	"10.9.2.1/32",
+}).withActivePolicies(
+	sameNsPolicyID("ns1"),
+	sameNsPolicyID("ns2"),
+).withEndpoint(
+	sameNsWepIdA, sameNsIngressTiers(sameNsPolicyID("ns1")),
+).withEndpoint(
+	sameNsWepIdB, sameNsIngressTiers(sameNsPolicyID("ns1")),
+).withEndpoint(
+	sameNsWepIdC, sameNsIngressTiers(sameNsPolicyID("ns2")),
+).withRoutes(
+	sameNsLocalRoute("10.9.1.1"),
+	sameNsLocalRoute("10.9.1.2"),
+	sameNsLocalRoute("10.9.2.1"),
+).withName("same(): local endpoints in two namespaces")
+
+// sameNsOneNamespace has only ns1 endpoints, so the ns2 copy (and its IP set) goes away.
+var sameNsOneNamespace = initialisedStore.withKVUpdates(
+	KVPair{Key: sameNsPolicyKey, Value: &sameNsPolicy},
+	KVPair{Key: sameNsWepKeyA, Value: sameNsWepA},
+	KVPair{Key: sameNsWepKeyB, Value: sameNsWepB},
+).withIPSet(sameNsNs1SelectorId, []string{
+	"10.9.1.1/32",
+	"10.9.1.2/32",
+}).withActivePolicies(
+	sameNsPolicyID("ns1"),
+).withEndpoint(
+	sameNsWepIdA, sameNsIngressTiers(sameNsPolicyID("ns1")),
+).withEndpoint(
+	sameNsWepIdB, sameNsIngressTiers(sameNsPolicyID("ns1")),
+).withRoutes(
+	sameNsLocalRoute("10.9.1.1"),
+	sameNsLocalRoute("10.9.1.2"),
+).withName("same(): local endpoints in one namespace")
+
+// sameNsWithHostEp adds a host endpoint, which gets the unexpanded policy.  Its same() rule
+// selects nothing.
+var sameNsWithHostEp = sameNsOneNamespace.withKVUpdates(
+	KVPair{Key: sameNsHostEpKey, Value: &sameNsHostEp},
+).withIPSet(
+	sameNsPlaceholderSelectorId, []string{},
+).withActivePolicies(
+	sameNsPolicyID("ns1"),
+	sameNsPolicyID(""),
+).withEndpoint(
+	sameNsHostEpId, sameNsIngressTiers(sameNsPolicyID("")),
+).withName("same(): local endpoints in one namespace and a host endpoint")
+
+// sameNsSwitchedToPlain replaces the same() rule with a plain selector, so the endpoints use the
+// real policy again.
+var sameNsSwitchedToPlain = sameNsOneNamespace.withKVUpdates(
+	KVPair{Key: sameNsPolicyKey, Value: &sameNsPlainPolicy},
+).withIPSet(
+	sameNsNs1SelectorId, nil,
+).withIPSet(sameNsAppXSelectorId, []string{
+	"10.9.1.1/32",
+	"10.9.1.2/32",
+}).withActivePolicies(
+	sameNsPolicyID(""),
+).withEndpoint(
+	sameNsWepIdA, sameNsIngressTiers(sameNsPolicyID("")),
+).withEndpoint(
+	sameNsWepIdB, sameNsIngressTiers(sameNsPolicyID("")),
+).withName("same(): policy switched to a plain selector")
+
+// sameNsWithOtherPolicy adds a second policy with the same order; ties are broken by name, so
+// "other" comes before "same-ns".
+var sameNsWithOtherPolicy = sameNsOneNamespace.withKVUpdates(
+	KVPair{Key: sameNsOtherPolicyKey, Value: &sameNsOtherPolicy},
+).withActivePolicies(
+	sameNsPolicyID("ns1"),
+	sameNsOtherPolicyID,
+).withEndpoint(
+	sameNsWepIdA, sameNsIngressTiers(sameNsOtherPolicyID, sameNsPolicyID("ns1")),
+).withEndpoint(
+	sameNsWepIdB, sameNsIngressTiers(sameNsOtherPolicyID, sameNsPolicyID("ns1")),
+).withName("same(): with another policy")
+
+// sameNsWithOtherPolicyReordered moves the same() policy's parent to order 10, so its copy must
+// be re-sorted ahead of "other".
+var sameNsOrder10 = func() Policy {
+	p := sameNsPolicy
+	p.Order = &order10
+	return p
+}()
+
+var sameNsWithOtherPolicyReordered = sameNsWithOtherPolicy.withKVUpdates(
+	KVPair{Key: sameNsPolicyKey, Value: &sameNsOrder10},
+).withEndpoint(
+	sameNsWepIdA, sameNsIngressTiers(sameNsPolicyID("ns1"), sameNsOtherPolicyID),
+).withEndpoint(
+	sameNsWepIdB, sameNsIngressTiers(sameNsPolicyID("ns1"), sameNsOtherPolicyID),
+).withName("same(): parent reordered ahead of another policy")
