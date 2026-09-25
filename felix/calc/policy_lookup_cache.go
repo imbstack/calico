@@ -172,12 +172,15 @@ func (pc *PolicyLookupsCache) updatePolicyRulesNFLOGPrefixes(key model.PolicyKey
 	}
 	pc.tierRefs[policy.Tier] = count + 1
 
+	// The NFLOG prefixes must match the dataplane, which uses the key as-is, but a per-namespace
+	// copy of a same() policy is reported as the policy it was derived from.
+	reportedKey := ParentPolicyKey(key)
 	oldPrefixes := pc.nflogPrefixesPolicy[key]
 	pc.nflogPrefixesPolicy[key] = pc.updateRulesNFLOGPrefixes(
 		&types.PolicyID{Name: key.Name, Namespace: key.Namespace, Kind: key.Kind},
-		key.Kind,
-		key.Namespace,
-		key.Name,
+		reportedKey.Kind,
+		reportedKey.Namespace,
+		reportedKey.Name,
 		policy.Tier,
 		oldPrefixes,
 		policy.InboundRules,

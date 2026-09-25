@@ -15,10 +15,14 @@
 package calc
 
 import (
+	"fmt"
 	"testing"
 
 	v3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
 
+	"github.com/projectcalico/calico/felix/rules"
+	"github.com/projectcalico/calico/felix/types"
+	goldmaneproto "github.com/projectcalico/calico/goldmane/proto"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/model"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/syncersv1/updateprocessors"
 )
@@ -117,5 +121,71 @@ func TestExpandForNamespace(t *testing.T) {
 	// The parent must not be modified; ARC expands it again for each namespace.
 	if got := policy.InboundRules[0].SrcSelector; got != "("+sameNSPlaceholder+") && (has(app))" {
 		t.Errorf("parent policy was modified: %q", got)
+	}
+}
+
+func TestPolicyLookupsCache_SameNamespaceCopyReportedAsParent(t *testing.T) {
+	pc := NewPolicyLookupsCache()
+	parent := model.PolicyKey{Name: "same-ns", Kind: v3.KindGlobalNetworkPolicy}
+	copyKey := virtualPolicyKey(parent, "ns1")
+	pc.OnPolicyActive(copyKey, &model.Policy{
+		Tier:         "default",
+		InboundRules: []model.Rule{{Action: "allow"}},
+	})
+
+	// The dataplane computes the prefix from the copy's own ID.
+	prefixStr := rules.CalculateNFLOGPrefixStr(rules.RuleActionAllow, rules.RuleOwnerTypePolicy, rules.RuleDirIngress, 0,
+		&types.PolicyID{Name: copyKey.Name, Namespace: copyKey.Namespace, Kind: copyKey.Kind})
+	var prefix [64]byte
+	copy(prefix[:], prefixStr)
+
+	rid := pc.GetRuleIDFromNFLOGPrefix(prefix)
+	if rid == nil {
+		t.Fatalf("no RuleID for prefix %q", prefixStr)
+	}
+	want := PolicyID{Kind: v3.KindGlobalNetworkPolicy, Name: "same-ns"}
+	if rid.PolicyID != want {
+		t.Errorf("RuleID policy = %+v, want parent %+v", rid.PolicyID, want)
+	}
+	if got, want := rid.GetFlowLogPolicyName(), "default|gnp:same-ns|allow"; got != want {
+		t.Errorf("flow log policy name = %q, want %q", got, want)
+	}
+
+	// goldmane must accept the hit; it rejects global policies that have a namespace.
+	hit, err := goldmaneproto.HitFromString(fmt.Sprintf("0|%s|%s", rid.GetFlowLogPolicyName(), rid.IndexStr))
+	if err != nil {
+		t.Fatalf("goldmane failed to parse policy hit: %v", err)
+	}
+	if _, err := hit.ToString(); err != nil {
+		t.Errorf("goldmane rejected policy hit: %v", err)
+	}
+
+	pc.OnPolicyInactive(copyKey)
+	if rid := pc.GetRuleIDFromNFLOGPrefix(prefix); rid != nil {
+		t.Errorf("prefix still registered after copy became inactive: %v", rid)
+	}
+}
+
+func TestEndpointLookupsCache_SameNamespaceCopyReportedAsParent(t *testing.T) {
+	ec := NewEndpointLookupsCache()
+	parent := model.PolicyKey{Name: "same-ns", Kind: v3.KindGlobalNetworkPolicy}
+	copyKey := virtualPolicyKey(parent, "ns1")
+	meta := ExtractPolicyMetadata(&model.Policy{Tier: "default", Types: []string{"ingress", "egress"}})
+
+	epKey := model.WorkloadEndpointKey{Hostname: "host1", OrchestratorID: "k8s", WorkloadID: "ns1/a", EndpointID: "eth0"}
+	ed := ec.CreateLocalEndpointData(epKey, &model.WorkloadEndpoint{}, []TierInfo{{
+		Name:            "default",
+		Valid:           true,
+		OrderedPolicies: []PolKV{{Key: copyKey, Value: &meta}},
+	}})
+
+	want := PolicyID{Kind: v3.KindGlobalNetworkPolicy, Name: "same-ns"}
+	for dir, md := range map[string]*MatchData{"ingress": ed.Ingress, "egress": ed.Egress} {
+		if _, ok := md.PolicyMatches[want]; !ok || len(md.PolicyMatches) != 1 {
+			t.Errorf("%s policy matches = %v, want only parent %+v", dir, md.PolicyMatches, want)
+		}
+		if got := md.TierData["default"].TierDefaultActionRuleID.PolicyID; got != want {
+			t.Errorf("%s tier default action RuleID policy = %+v, want parent %+v", dir, got, want)
+		}
 	}
 }
