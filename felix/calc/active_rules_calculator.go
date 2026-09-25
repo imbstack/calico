@@ -75,9 +75,14 @@ type ActiveRulesCalculator struct {
 	// Caches for ALP policies for stat collector.
 	allALPPolicies set.Set[model.PolicyKey]
 
-	// Policy/profile ID to matching endpoint sets.
+	// Policy/profile ID to matching endpoint sets.  For same() policies, matches against workload
+	// endpoints are recorded under a virtual key per namespace (see same_namespace.go).
 	policyIDToEndpointKeys  multidict.Multidict[any, any]
 	profileIDToEndpointKeys multidict.Multidict[string, any]
+
+	// Active virtual keys for each same() policy, so that we can find a policy's per-namespace
+	// copies when it is updated.
+	parentToVirtualKeys multidict.Multidict[model.PolicyKey, model.PolicyKey]
 
 	// Label index, matching policy selectors against local endpoints.
 	labelIndex *labelindex.InheritIndex
@@ -113,6 +118,7 @@ func NewActiveRulesCalculator() *ActiveRulesCalculator {
 		// Policy/profile ID to matching endpoint sets.
 		policyIDToEndpointKeys:  multidict.New[any, any](),
 		profileIDToEndpointKeys: multidict.New[string, any](),
+		parentToVirtualKeys:     multidict.New[model.PolicyKey, model.PolicyKey](),
 		missingProfiles:         set.New[string](),
 
 		// Cache of profile IDs by local endpoint.
@@ -212,6 +218,12 @@ func (arc *ActiveRulesCalculator) OnUpdate(update api.Update) (_ bool) {
 			}
 			arc.allPolicies.Set(key, policy)
 
+			// TODO(NET-55): if the policy switched between same() and non-same() (compare
+			// isSameNamespacePolicy for oldPolicy and policy), its selector may be unchanged, so the
+			// label index won't fire any match events.  Move each of its current matches from the
+			// old effective key to the new one (see effectivePolicyKey), starting the new match
+			// before stopping the old one so the endpoint is never left without the policy.
+
 			// If the policy transitions to be force-programmed, simulate
 			// a match with a dummy endpoint key.
 			newPolicyForceProgrammed := policyForceProgrammed(policy)
@@ -244,6 +256,8 @@ func (arc *ActiveRulesCalculator) OnUpdate(update api.Update) (_ bool) {
 				log.Debug("Policy updated while active, telling listener")
 				arc.sendPolicyUpdate(key, policy)
 			}
+			// TODO(NET-55): also re-send each active per-namespace copy of the policy:
+			//   for each vk in arc.parentToVirtualKeys.Get(key) { arc.sendPolicyUpdate(vk, arc.policyForKey(vk)) }
 
 			// update ALP policies set.
 			if arc.isALPPolicy(policy) {
@@ -373,16 +387,18 @@ func (arc *ActiveRulesCalculator) onMatchStarted(selID, labelId any) {
 		}
 		return
 	}
-	polKey := selID.(model.PolicyKey)
+	polKey := arc.effectivePolicyKey(selID.(model.PolicyKey), labelId)
 	policyWasActive := arc.policyIDToEndpointKeys.ContainsKey(polKey)
-	arc.policyIDToEndpointKeys.Put(selID, labelId)
+	arc.policyIDToEndpointKeys.Put(polKey, labelId)
 
 	if !policyWasActive {
 		// Policy wasn't active before, tell the listener.  The policy
 		// must be in allPolicies because we can only match on a policy
 		// that we've seen.
 		log.Debugf("Policy %v now active", polKey)
-		policy, known := arc.allPolicies.Get(polKey)
+		// TODO(NET-55): if polKey is virtual, record it in arc.parentToVirtualKeys.
+		policy := arc.policyForKey(polKey)
+		known := policy != nil
 		if !known {
 			log.WithField("policy", polKey).Panic("Policy active but missing from allPolicies.")
 		}
@@ -405,20 +421,48 @@ func (arc *ActiveRulesCalculator) onMatchStopped(selID, labelId any) {
 		}
 		return
 	}
-	polKey := selID.(model.PolicyKey)
-	arc.policyIDToEndpointKeys.Discard(selID, labelId)
-	if !arc.policyIDToEndpointKeys.ContainsKey(selID) {
+	polKey := arc.effectivePolicyKey(selID.(model.PolicyKey), labelId)
+	arc.policyIDToEndpointKeys.Discard(polKey, labelId)
+	if !arc.policyIDToEndpointKeys.ContainsKey(polKey) {
 		// Policy no longer active.
-		polKey := selID.(model.PolicyKey)
 		log.Debugf("Policy %v no longer active", polKey)
-		policy, _ := arc.allPolicies.Get(polKey)
-		arc.sendPolicyUpdate(polKey, policy)
+		// TODO(NET-55): if polKey is virtual, remove it from arc.parentToVirtualKeys.
+		arc.sendPolicyUpdate(polKey, arc.policyForKey(polKey))
 	}
 	if labelId, ok := labelId.(model.EndpointKey); ok {
 		for _, l := range arc.PolicyMatchListeners {
 			l.OnPolicyMatchStopped(polKey, labelId)
 		}
 	}
+}
+
+// effectivePolicyKey returns the key that a match between the given policy and label ID (usually an
+// endpoint key) should be tracked under.  That is the policy's own key, except for matches between a
+// same() policy and a workload endpoint, which use the virtual key for the endpoint's namespace.
+func (arc *ActiveRulesCalculator) effectivePolicyKey(polKey model.PolicyKey, labelId any) model.PolicyKey {
+	// TODO(NET-55): if the policy is a same() policy (isSameNamespacePolicy) and labelId is a
+	// model.WorkloadEndpointKey, return virtualPolicyKey(polKey, wepKey.GetNamespace()).
+	// Everything else, including forceProgrammedDummyKey and host endpoints, keeps polKey.
+	//
+	// Note: this must give the same answer in onMatchStopped as it did in onMatchStarted.  When a
+	// policy changes between same() and non-same(), the OnUpdate handler has to move the existing
+	// matches before the new policy is used here.
+	return polKey
+}
+
+// policyForKey returns the policy to send downstream for the given (possibly virtual) key, or nil
+// if the policy is unknown.  For a virtual key, it is the parent policy expanded for the key's
+// namespace.
+func (arc *ActiveRulesCalculator) policyForKey(key model.PolicyKey) *model.Policy {
+	if !IsVirtualPolicyKey(key) {
+		policy, _ := arc.allPolicies.Get(key)
+		return policy
+	}
+	parent, known := arc.allPolicies.Get(ParentPolicyKey(key))
+	if !known {
+		return nil
+	}
+	return expandForNamespace(parent, key.Namespace)
 }
 
 var DummyDropRules = model.ProfileRules{

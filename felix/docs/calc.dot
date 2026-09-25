@@ -92,7 +92,7 @@ OnUpdates(updates []KVPair)<BR ALIGN="LEFT"/>
 
         ActiveRulesCalc [label=<<table BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
           <tr><td><font point-size="14">Active rules calculator</font></td></tr>
-          <tr><td><font point-size="10">Calculates which policies/profiles are<br/>active on this host.</font></td></tr>
+          <tr><td><font point-size="10">Calculates which policies/profiles are<br/>active on this host.<br/>Expands same() policies into a copy<br/>per namespace of matched endpoints.</font></td></tr>
         </table>>, shape=none, margin=0];
         ActiveRulesCalc -> RuleScanner [label="active rule\nupdates"];
         ActiveRulesCalc -> PolicyResolver [label="policy match\nupdates"];

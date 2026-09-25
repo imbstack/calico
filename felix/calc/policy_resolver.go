@@ -124,6 +124,11 @@ func (pr *PolicyResolver) OnUpdate(update api.Update) (filterOut bool) {
 			policy := update.Value.(*model.Policy)
 			pr.allPolicies[key] = ExtractPolicyMetadata(policy)
 		}
+		// TODO(NET-55): the per-namespace copies of a same() policy are tracked under virtual
+		// keys (see same_namespace.go), so key itself may be inactive while its copies are active.
+		// Keep an index from parent key to active virtual keys (populate it in OnPolicyMatch, prune
+		// it in OnPolicyMatchStopped) and, for each active copy, update the sorter with the new
+		// metadata and mark its endpoints dirty.
 		if !pr.policyIDToEndpointIDs.ContainsKey(key) {
 			return
 		}
@@ -195,7 +200,8 @@ func (pr *PolicyResolver) Flush() {
 	}
 	// Resolve any pending policy updates, and clear the set.
 	pr.pendingPolicyUpdates.Iter(func(polKey model.PolicyKey) error {
-		policy, ok := pr.allPolicies[polKey]
+		// Per-namespace copies of a same() policy share their parent's metadata.
+		policy, ok := pr.allPolicies[ParentPolicyKey(polKey)]
 		if !ok {
 			log.Warnf("PolicyResolver missing policy metadata for %s during flush", polKey)
 			return nil
