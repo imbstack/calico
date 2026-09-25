@@ -170,6 +170,11 @@ type EntityRule struct {
 	//
 	// For GlobalNetworkPolicy, an empty NamespaceSelector implies the Selector applies to workload
 	// endpoints across all namespaces.
+	//
+	// For GlobalNetworkPolicy, `same()` NamespaceSelector implies that the Selector is limited to selecting
+	// only workload endpoints in the same namespace as the workload endpoint that the policy is applied to.
+	// Since host endpoints are not in a namespace, a rule with `same()` never matches for them. `same()`
+	// cannot be combined with other selector expressions and is not valid in NetworkPolicy or Profile rules.
 	NamespaceSelector string `json:"namespaceSelector,omitempty" validate:"omitempty,ruleNamespaceSelector"`
 
 	// Services is an optional field that contains options for matching Kubernetes Services.
