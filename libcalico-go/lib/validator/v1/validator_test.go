@@ -79,6 +79,12 @@ func init() {
 		// Empty rule is valid, it means "allow all".
 		Entry("empty rule (m)", model.Rule{}, true),
 
+		// (Backend model) Original namespace selectors.
+		Entry("should accept same() original src namespace selector (m)", model.Rule{OriginalSrcNamespaceSelector: "same()"}, true),
+		Entry("should accept same() original dst namespace selector (m)", model.Rule{OriginalDstNamespaceSelector: "same()"}, true),
+		Entry("should accept normal original namespace selector (m)", model.Rule{OriginalSrcNamespaceSelector: "foo == 'bar'"}, true),
+		Entry("should reject invalid original namespace selector (m)", model.Rule{OriginalSrcNamespaceSelector: "same() && foo"}, false),
+
 		// (Backend model) Actions.
 		Entry("should accept allow action (m)", model.Rule{Action: "allow"}, true),
 		Entry("should accept deny action (m)", model.Rule{Action: "deny"}, true),

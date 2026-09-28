@@ -97,6 +97,7 @@ func init() {
 	registerFieldValidator("name", validateName)
 	registerFieldValidator("namespacedName", validateNamespacedName)
 	registerFieldValidator("selector", validateSelector)
+	registerFieldValidator("ruleNamespaceSelector", v3.ValidateRuleNamespaceSelector)
 	registerFieldValidator("tag", validateTag)
 	registerFieldValidator("labels", validateLabels)
 	registerFieldValidator("scopeglobalornode", validateScopeGlobalOrNode)

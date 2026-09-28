@@ -15,7 +15,10 @@
 package calc
 
 import (
+	"slices"
 	"testing"
+
+	v3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
 
 	"github.com/projectcalico/calico/lib/std/uniquelabels"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/api"
@@ -236,4 +239,214 @@ func TestARC_ComputedSelector_DoesNotTriggerPolicyCallbacks(t *testing.T) {
 	if arc.policyIDToEndpointKeys.Len() != 0 {
 		t.Errorf("expected policyIDToEndpointKeys to be empty, got len=%d", arc.policyIDToEndpointKeys.Len())
 	}
+}
+
+// recordingRuleScanner records the policies that the ARC has marked active.
+type recordingRuleScanner struct {
+	activePolicies map[model.PolicyKey]*model.Policy
+}
+
+func (r *recordingRuleScanner) OnPolicyActive(key model.PolicyKey, policy *model.Policy) {
+	r.activePolicies[key] = policy
+}
+func (r *recordingRuleScanner) OnPolicyInactive(key model.PolicyKey) {
+	delete(r.activePolicies, key)
+}
+func (r *recordingRuleScanner) OnProfileActive(model.ProfileRulesKey, *model.ProfileRules) {}
+func (r *recordingRuleScanner) OnProfileInactive(model.ProfileRulesKey)                    {}
+
+func (r *recordingRuleScanner) activeKeys() []model.PolicyKey {
+	var keys []model.PolicyKey
+	for k := range r.activePolicies {
+		keys = append(keys, k)
+	}
+	slices.SortFunc(keys, func(a, b model.PolicyKey) int {
+		if a.Namespace < b.Namespace {
+			return -1
+		} else if a.Namespace > b.Namespace {
+			return 1
+		}
+		return 0
+	})
+	return keys
+}
+
+var sameNSTestPolicyKey = model.PolicyKey{Name: "same-ns", Kind: v3.KindGlobalNetworkPolicy}
+
+func sameNSTestWepKey(ns, pod string) model.WorkloadEndpointKey {
+	return model.WorkloadEndpointKey{Hostname: "host1", OrchestratorID: "k8s", WorkloadID: ns + "/" + pod, EndpointID: "eth0"}
+}
+
+var sameNSTestHepKey = model.HostEndpointKey{Hostname: "host1", EndpointID: "eth0"}
+
+// createSameNSARC returns an ARC with local endpoints in ns1 (two), ns2 (one) and a host endpoint.
+func createSameNSARC() (*ActiveRulesCalculator, *recordingRuleScanner, *testPolicyMatchListener) {
+	arc, listener := createARC()
+	scanner := &recordingRuleScanner{activePolicies: map[model.PolicyKey]*model.Policy{}}
+	arc.RuleScanner = scanner
+	labels := map[string]string{"app": "x"}
+	addEndpoint(arc, sameNSTestWepKey("ns1", "a"), labels)
+	addEndpoint(arc, sameNSTestWepKey("ns1", "b"), labels)
+	addEndpoint(arc, sameNSTestWepKey("ns2", "c"), labels)
+	arc.OnUpdate(api.Update{KVPair: model.KVPair{
+		Key:   sameNSTestHepKey,
+		Value: &model.HostEndpoint{Labels: uniquelabels.Make(labels)},
+	}})
+	return arc, scanner, listener
+}
+
+func updatePolicy(arc *ActiveRulesCalculator, key model.PolicyKey, policy *model.Policy) {
+	u := api.Update{KVPair: model.KVPair{Key: key}}
+	if policy != nil {
+		u.Value = policy
+	}
+	arc.OnUpdate(u)
+}
+
+func expectActiveKeys(t *testing.T, scanner *recordingRuleScanner, want ...model.PolicyKey) {
+	t.Helper()
+	if got := scanner.activeKeys(); !slices.Equal(got, want) {
+		t.Fatalf("active policies = %v, want %v", got, want)
+	}
+}
+
+func TestARC_SameNamespace_CopyPerNamespace(t *testing.T) {
+	arc, scanner, listener := createSameNSARC()
+	updatePolicy(arc, sameNSTestPolicyKey, sameNSPolicy())
+
+	ns1Key := virtualPolicyKey(sameNSTestPolicyKey, "ns1")
+	ns2Key := virtualPolicyKey(sameNSTestPolicyKey, "ns2")
+	// The host endpoint uses the real key.
+	expectActiveKeys(t, scanner, sameNSTestPolicyKey, ns1Key, ns2Key)
+
+	if got, want := scanner.activePolicies[ns1Key].InboundRules[0].SrcSelector,
+		"(projectcalico.org/namespace == 'ns1') && (has(app))"; got != want {
+		t.Errorf("ns1 copy SrcSelector = %q, want %q", got, want)
+	}
+	if got, want := scanner.activePolicies[sameNSTestPolicyKey].InboundRules[0].SrcSelector,
+		"("+sameNSPlaceholder+") && (has(app))"; got != want {
+		t.Errorf("host endpoint copy should be unexpanded: got %q, want %q", got, want)
+	}
+
+	// Each endpoint is reported against the key for its namespace.
+	wantMatches := map[model.EndpointKey]model.PolicyKey{
+		sameNSTestWepKey("ns1", "a"): ns1Key,
+		sameNSTestWepKey("ns1", "b"): ns1Key,
+		sameNSTestWepKey("ns2", "c"): ns2Key,
+		sameNSTestHepKey:             sameNSTestPolicyKey,
+	}
+	if len(listener.policyMatches) != len(wantMatches) {
+		t.Fatalf("got %d policy matches, want %d: %v", len(listener.policyMatches), len(wantMatches), listener.policyMatches)
+	}
+	for _, m := range listener.policyMatches {
+		if wantMatches[m.EndpointKey] != m.PolicyKey {
+			t.Errorf("endpoint %v matched %v, want %v", m.EndpointKey, m.PolicyKey, wantMatches[m.EndpointKey])
+		}
+	}
+}
+
+func TestARC_SameNamespace_LastEndpointInNamespaceRemoved(t *testing.T) {
+	arc, scanner, _ := createSameNSARC()
+	updatePolicy(arc, sameNSTestPolicyKey, sameNSPolicy())
+
+	deleteEndpoint(arc, sameNSTestWepKey("ns1", "a"))
+	expectActiveKeys(t, scanner, sameNSTestPolicyKey,
+		virtualPolicyKey(sameNSTestPolicyKey, "ns1"), virtualPolicyKey(sameNSTestPolicyKey, "ns2"))
+
+	deleteEndpoint(arc, sameNSTestWepKey("ns2", "c"))
+	expectActiveKeys(t, scanner, sameNSTestPolicyKey, virtualPolicyKey(sameNSTestPolicyKey, "ns1"))
+	if arc.parentToVirtualKeys.Contains(sameNSTestPolicyKey, virtualPolicyKey(sameNSTestPolicyKey, "ns2")) {
+		t.Error("ns2 copy still tracked after its last endpoint was removed")
+	}
+}
+
+func TestARC_SameNamespace_ParentUpdateResendsCopies(t *testing.T) {
+	arc, scanner, _ := createSameNSARC()
+	updatePolicy(arc, sameNSTestPolicyKey, sameNSPolicy())
+
+	updated := sameNSPolicy()
+	updated.InboundRules[1].SrcSelector = "has(changed)"
+	updatePolicy(arc, sameNSTestPolicyKey, updated)
+
+	for _, ns := range []string{"ns1", "ns2"} {
+		copyPol := scanner.activePolicies[virtualPolicyKey(sameNSTestPolicyKey, ns)]
+		if got := copyPol.InboundRules[1].SrcSelector; got != "has(changed)" {
+			t.Errorf("%s copy not updated: SrcSelector = %q", ns, got)
+		}
+	}
+}
+
+func TestARC_SameNamespace_SwitchToPlainAndBack(t *testing.T) {
+	arc, scanner, listener := createSameNSARC()
+	updatePolicy(arc, sameNSTestPolicyKey, sameNSPolicy())
+
+	plain := &model.Policy{Selector: "all()", InboundRules: []model.Rule{{Action: "allow"}}}
+	updatePolicy(arc, sameNSTestPolicyKey, plain)
+	expectActiveKeys(t, scanner, sameNSTestPolicyKey)
+	if n := countMatches(arc, sameNSTestPolicyKey); n != 4 {
+		t.Errorf("after switch to plain, real key has %d matches, want 4", n)
+	}
+	if arc.parentToVirtualKeys.Len() != 0 {
+		t.Errorf("virtual keys still tracked after switch to plain")
+	}
+
+	updatePolicy(arc, sameNSTestPolicyKey, sameNSPolicy())
+	expectActiveKeys(t, scanner, sameNSTestPolicyKey,
+		virtualPolicyKey(sameNSTestPolicyKey, "ns1"), virtualPolicyKey(sameNSTestPolicyKey, "ns2"))
+	if n := countMatches(arc, sameNSTestPolicyKey); n != 1 {
+		t.Errorf("after switch back, real key has %d matches, want 1 (the host endpoint)", n)
+	}
+
+	// Every match that started was stopped under the same key.
+	started := map[policyMatchEvent]int{}
+	for _, m := range listener.policyMatches {
+		started[m]++
+	}
+	for _, m := range listener.policyMatchStops {
+		started[m]--
+		if started[m] < 0 {
+			t.Errorf("match %v stopped without being started", m)
+		}
+	}
+}
+
+func TestARC_SameNamespace_DeleteCleansUp(t *testing.T) {
+	arc, scanner, _ := createSameNSARC()
+	updatePolicy(arc, sameNSTestPolicyKey, sameNSPolicy())
+	updatePolicy(arc, sameNSTestPolicyKey, nil)
+
+	expectActiveKeys(t, scanner)
+	if arc.policyIDToEndpointKeys.Len() != 0 {
+		t.Errorf("matches leaked after delete: %d", arc.policyIDToEndpointKeys.Len())
+	}
+	if arc.parentToVirtualKeys.Len() != 0 {
+		t.Errorf("virtual keys leaked after delete")
+	}
+	if arc.sameNamespacePolicies.Len() != 0 {
+		t.Errorf("policy still marked as same() after delete")
+	}
+}
+
+func TestARC_SameNamespace_ForceProgrammed(t *testing.T) {
+	arc, scanner, _ := createSameNSARC()
+	pol := sameNSPolicy()
+	pol.PerformanceHints = []v3.PolicyPerformanceHint{v3.PerfHintAssumeNeededOnEveryNode}
+	updatePolicy(arc, sameNSTestPolicyKey, pol)
+
+	// The dummy match keeps the real key active, alongside the per-namespace copies.
+	expectActiveKeys(t, scanner, sameNSTestPolicyKey,
+		virtualPolicyKey(sameNSTestPolicyKey, "ns1"), virtualPolicyKey(sameNSTestPolicyKey, "ns2"))
+
+	deleteEndpoint(arc, sameNSTestWepKey("ns2", "c"))
+	arc.OnUpdate(api.Update{KVPair: model.KVPair{Key: sameNSTestHepKey}})
+	expectActiveKeys(t, scanner, sameNSTestPolicyKey, virtualPolicyKey(sameNSTestPolicyKey, "ns1"))
+
+	updatePolicy(arc, sameNSTestPolicyKey, nil)
+	expectActiveKeys(t, scanner)
+}
+
+func countMatches(arc *ActiveRulesCalculator, key model.PolicyKey) int {
+	n := 0
+	arc.policyIDToEndpointKeys.Iter(key, func(any) { n++ })
+	return n
 }

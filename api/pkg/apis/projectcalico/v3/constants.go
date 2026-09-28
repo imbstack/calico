@@ -32,6 +32,10 @@ const (
 	// and may be used for label matches by Policy selectors.
 	LabelNamespace = "projectcalico.org/namespace"
 
+	// SameNamespaceSelector is a special value for a GlobalNetworkPolicy rule's namespaceSelector.  It
+	// matches endpoints in the same namespace as the endpoint that the policy is being applied to.
+	SameNamespaceSelector = "same()"
+
 	// Label used to denote the ServiceAccount.  This is added to the workload endpoints by Calico
 	// and may be used for label matches by Policy selectors.
 	LabelServiceAccount = "projectcalico.org/serviceaccount"

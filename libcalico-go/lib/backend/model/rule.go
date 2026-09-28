@@ -71,9 +71,9 @@ type Rule struct {
 	// The selectors above are formed in the update processor layer by combining the original
 	// selectors, namespace selectors and service account selectors into one.
 	OriginalSrcSelector               string   `json:"orig_src_selector,omitempty" validate:"omitempty,selector"`
-	OriginalSrcNamespaceSelector      string   `json:"orig_src_namespace_selector,omitempty" validate:"omitempty,selector"`
+	OriginalSrcNamespaceSelector      string   `json:"orig_src_namespace_selector,omitempty" validate:"omitempty,ruleNamespaceSelector"`
 	OriginalDstSelector               string   `json:"orig_dst_selector,omitempty" validate:"omitempty,selector"`
-	OriginalDstNamespaceSelector      string   `json:"orig_dst_namespace_selector,omitempty" validate:"omitempty,selector"`
+	OriginalDstNamespaceSelector      string   `json:"orig_dst_namespace_selector,omitempty" validate:"omitempty,ruleNamespaceSelector"`
 	OriginalNotSrcSelector            string   `json:"!orig_src_selector,omitempty" validate:"omitempty,selector"`
 	OriginalNotDstSelector            string   `json:"!orig_dst_selector,omitempty" validate:"omitempty,selector"`
 	OriginalSrcServiceAccountNames    []string `json:"orig_src_service_acct_names,omitempty" validate:"omitempty"`

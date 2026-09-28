@@ -244,9 +244,12 @@ func (ec *EndpointLookupsCache) CreateLocalEndpointData(key model.EndpointKey, e
 
 		var hasIngress, hasEgress bool
 		for _, pol := range ti.OrderedPolicies {
+			// A per-namespace copy of a same() policy is reported as the policy it was derived
+			// from, matching the RuleIDs in the PolicyLookupsCache.
+			reportedKey := ParentPolicyKey(pol.Key)
 			if pol.GovernsIngress() {
 				// Add an ingress tier default action lookup.
-				rid := NewRuleID(pol.Key.Kind, ti.Name, pol.Key.Name, pol.Key.Namespace, RuleIndexTierDefaultAction, rules.RuleDirIngress, tierDefaultAction)
+				rid := NewRuleID(reportedKey.Kind, ti.Name, reportedKey.Name, reportedKey.Namespace, RuleIndexTierDefaultAction, rules.RuleDirIngress, tierDefaultAction)
 				ed.Ingress.PolicyMatches[rid.PolicyID] = policyMatchIdxIngress
 
 				if model.KindIsStaged(pol.Key.Kind) {
@@ -261,7 +264,7 @@ func (ec *EndpointLookupsCache) CreateLocalEndpointData(key model.EndpointKey, e
 			}
 			if pol.GovernsEgress() {
 				// Add an egress tier default action lookup.
-				rid := NewRuleID(pol.Key.Kind, ti.Name, pol.Key.Name, pol.Key.Namespace, RuleIndexTierDefaultAction, rules.RuleDirEgress, tierDefaultAction)
+				rid := NewRuleID(reportedKey.Kind, ti.Name, reportedKey.Name, reportedKey.Namespace, RuleIndexTierDefaultAction, rules.RuleDirEgress, tierDefaultAction)
 				ed.Egress.PolicyMatches[rid.PolicyID] = policyMatchIdxEgress
 
 				if model.KindIsStaged(pol.Key.Kind) {

@@ -41,6 +41,13 @@ func RulesAPIV3ToBackend(ars []apiv3.Rule, ns string) []model.Rule {
 	return brs
 }
 
+// SameNamespacePlaceholder is used as the namespace name when converting a same() namespaceSelector.
+// It is not a valid namespace name, so the resulting selector matches nothing until Felix replaces it.
+const SameNamespacePlaceholder = "__same_namespace__"
+
+// SameNamespacePlaceholderSelector is the selector fragment emitted for a same() namespaceSelector.
+var SameNamespacePlaceholderSelector = fmt.Sprintf("%s == '%s'", apiv3.LabelNamespace, SameNamespacePlaceholder)
+
 // Form and return a single selector expression for all the endpoints that an EntityRule should
 // match.  The returned expression incorporates the semantics of:
 //   - the EntityRule's Selector, NamespaceSelector and ServiceAccounts fields
@@ -62,7 +69,12 @@ func getEndpointSelector(namespaceSelector, endpointSelector, serviceAccountSele
 	var nsSelector, selector string
 
 	// Determine which namespaces are impacted by this entityRule.
-	if namespaceSelector != "" {
+	if namespaceSelector == apiv3.SameNamespaceSelector {
+		// same() depends on the namespace of the endpoint that the policy is applied to, so it can't
+		// be resolved here.  Emit a placeholder that matches nothing; Felix replaces it with a
+		// concrete namespace match when it expands the policy per namespace.
+		nsSelector = SameNamespacePlaceholderSelector
+	} else if namespaceSelector != "" {
 		// A namespace selector was given - the rule applies to all namespaces
 		// which match this selector.
 		nsSelector = parseSelectorAttachPrefix(namespaceSelector, conversion.NamespaceLabelPrefix)

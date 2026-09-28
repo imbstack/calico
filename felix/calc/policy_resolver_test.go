@@ -378,3 +378,46 @@ func TestPolicyResolver_EndpointDeleteClearsComputedData(t *testing.T) {
 		t.Error("expected endpointComputedData to be cleaned up after endpoint deletion")
 	}
 }
+
+func TestPolicyResolver_SameNamespaceCopies(t *testing.T) {
+	pr, recorder := createPolicyResolver()
+	pr.OnDatamodelStatus(api.InSync)
+
+	parentKey := model.PolicyKey{Name: "same-ns", Kind: v3.KindGlobalNetworkPolicy}
+	copyKey := virtualPolicyKey(parentKey, "ns1")
+	order20, order10 := 20.0, 10.0
+
+	endpointKey := model.WorkloadEndpointKey{Hostname: "host1", OrchestratorID: "k8s", WorkloadID: "ns1/a", EndpointID: "eth0"}
+	wep := &model.WorkloadEndpoint{Name: "cali-a"}
+	pr.OnUpdate(api.Update{KVPair: model.KVPair{Key: endpointKey, Value: wep}})
+
+	// Only the parent's metadata is known; the copy must use it.
+	pr.OnUpdate(api.Update{KVPair: model.KVPair{Key: parentKey, Value: &model.Policy{Tier: "default", Order: &order20}}})
+	pr.OnPolicyMatch(copyKey, endpointKey)
+	pr.Flush()
+	if len(recorder.updates) != 1 {
+		t.Fatalf("expected 1 update after first flush, got %d", len(recorder.updates))
+	}
+	got := recorder.updates[0].Tiers[0].OrderedPolicies
+	if len(got) != 1 || got[0].Key != copyKey || got[0].Value.Order != order20 {
+		t.Fatalf("expected copy with parent's order 20, got %+v", got)
+	}
+
+	// Changing the parent's order must re-sort the copy and re-send the endpoint.
+	recorder.updates = nil
+	pr.OnUpdate(api.Update{KVPair: model.KVPair{Key: parentKey, Value: &model.Policy{Tier: "default", Order: &order10}}})
+	pr.Flush()
+	if len(recorder.updates) != 1 {
+		t.Fatalf("expected endpoint to be re-sent after parent update, got %d updates", len(recorder.updates))
+	}
+	got = recorder.updates[0].Tiers[0].OrderedPolicies
+	if len(got) != 1 || got[0].Key != copyKey || got[0].Value.Order != order10 {
+		t.Fatalf("expected copy with parent's new order 10, got %+v", got)
+	}
+
+	// Once the copy has no matches, it is no longer tracked against its parent.
+	pr.OnPolicyMatchStopped(copyKey, endpointKey)
+	if pr.parentToVirtualKeys.Len() != 0 {
+		t.Error("copy still indexed against its parent after its last match stopped")
+	}
+}

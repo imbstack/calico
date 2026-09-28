@@ -573,4 +573,46 @@ var _ = Describe("Test the Rules Conversion Functions", func() {
 		Expect(outRules[1].DstSelector).To(Equal("(has(projectcalico.org/namespace)) && (has(label2))"))
 		Expect(outRules[2].DstSelector).To(Equal("(!has(projectcalico.org/namespace)) && (has(label3))"))
 	})
+
+	It("should convert a same() namespaceSelector to the same-namespace placeholder", func() {
+		rules := []apiv3.Rule{
+			{
+				Action: apiv3.Allow,
+				Source: apiv3.EntityRule{
+					NamespaceSelector: "same()",
+				},
+			},
+			{
+				Action: apiv3.Allow,
+				Source: apiv3.EntityRule{
+					NamespaceSelector: "same()",
+					Selector:          "has(label1)",
+					NotSelector:       "has(label2)",
+				},
+			},
+			{
+				Action: apiv3.Allow,
+				Destination: apiv3.EntityRule{
+					NamespaceSelector: "same()",
+					ServiceAccounts: &apiv3.ServiceAccountMatch{
+						Names: []string{"sa1"},
+					},
+				},
+			},
+		}
+
+		outRules := updateprocessors.RulesAPIV3ToBackend(rules, "")
+		placeholder := updateprocessors.SameNamespacePlaceholderSelector
+		Expect(placeholder).To(Equal("projectcalico.org/namespace == '__same_namespace__'"))
+
+		Expect(outRules[0].SrcSelector).To(Equal(placeholder))
+		Expect(outRules[0].OriginalSrcNamespaceSelector).To(Equal("same()"))
+
+		Expect(outRules[1].SrcSelector).To(Equal("(" + placeholder + ") && (has(label1))"))
+		Expect(outRules[1].NotSrcSelector).To(Equal("has(label2)"))
+		Expect(outRules[1].OriginalSrcNamespaceSelector).To(Equal("same()"))
+
+		Expect(outRules[2].DstSelector).To(Equal("(" + placeholder + ") && (projectcalico.org/serviceaccount in {\"sa1\"})"))
+		Expect(outRules[2].OriginalDstNamespaceSelector).To(Equal("same()"))
+	})
 })
