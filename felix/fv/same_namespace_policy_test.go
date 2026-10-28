@@ -95,6 +95,23 @@ var _ = infrastructure.DatastoreDescribe("_BPF-SAFE_ same namespace policy tests
 		cc.CheckConnectivity()
 	}
 
+	expectOnlyOtherNamespace := func() {
+		cc.ResetExpectations()
+		// Same namespace, same host and across hosts.
+		cc.ExpectNone(a0, a1)
+		cc.ExpectNone(a1, a0)
+		cc.ExpectNone(b0, b1)
+		cc.ExpectNone(b1, b0)
+		// Different namespace, same host and across hosts.
+		cc.ExpectSome(a0, b0)
+		cc.ExpectSome(b0, a0)
+		cc.ExpectSome(a0, b1)
+		cc.ExpectSome(b1, a0)
+		cc.ExpectSome(a1, b1)
+		cc.ExpectSome(b0, a1)
+		cc.CheckConnectivity()
+	}
+
 	expectFullConnectivity := func() {
 		cc.ResetExpectations()
 		for _, from := range []*workload.Workload{a0, b0, a1, b1} {
@@ -109,7 +126,7 @@ var _ = infrastructure.DatastoreDescribe("_BPF-SAFE_ same namespace policy tests
 
 	// A single spec: the infra deletes namespaces asynchronously between specs, so a second spec
 	// that recreated ns-a straight away would race with the deletion.
-	It("should only allow ingress from the same namespace", func() {
+	It("should enforce same() in ingress allow and egress deny rules", func() {
 		By("allowing everything before the policy is created")
 		expectFullConnectivity()
 
@@ -140,6 +157,28 @@ var _ = infrastructure.DatastoreDescribe("_BPF-SAFE_ same namespace policy tests
 		expectOnlySameNamespace()
 
 		By("removing the policy")
+		_, err = client.GlobalNetworkPolicies().Delete(utils.Ctx, gnp.Name, options.DeleteOptions{})
+		Expect(err).NotTo(HaveOccurred())
+		expectFullConnectivity()
+
+		// A deny rule is where a same() rule that silently failed to expand would fail open.
+		By("creating a GlobalNetworkPolicy that denies egress to same()")
+		gnp = api.NewGlobalNetworkPolicy()
+		gnp.Name = "same-ns-deny"
+		gnp.Spec.Selector = "app == '" + appLabel + "'"
+		gnp.Spec.Types = []api.PolicyType{api.PolicyTypeEgress}
+		gnp.Spec.Egress = []api.Rule{
+			{
+				Action:      api.Deny,
+				Destination: api.EntityRule{NamespaceSelector: api.SameNamespaceSelector},
+			},
+			{Action: api.Allow},
+		}
+		gnp, err = client.GlobalNetworkPolicies().Create(utils.Ctx, gnp, utils.NoOptions)
+		Expect(err).NotTo(HaveOccurred())
+		expectOnlyOtherNamespace()
+
+		By("removing the deny policy")
 		_, err = client.GlobalNetworkPolicies().Delete(utils.Ctx, gnp.Name, options.DeleteOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		expectFullConnectivity()

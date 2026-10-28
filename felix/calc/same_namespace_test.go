@@ -16,6 +16,7 @@ package calc
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	v3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
@@ -25,6 +26,8 @@ import (
 	goldmaneproto "github.com/projectcalico/calico/goldmane/proto"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/model"
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/syncersv1/updateprocessors"
+	"github.com/projectcalico/calico/libcalico-go/lib/selector"
+	v1v "github.com/projectcalico/calico/libcalico-go/lib/validator/v1"
 )
 
 var sameNSPlaceholder = updateprocessors.SameNamespacePlaceholderSelector
@@ -121,6 +124,125 @@ func TestExpandForNamespace(t *testing.T) {
 	// The parent must not be modified; ARC expands it again for each namespace.
 	if got := policy.InboundRules[0].SrcSelector; got != "("+sameNSPlaceholder+") && (has(app))" {
 		t.Errorf("parent policy was modified: %q", got)
+	}
+}
+
+// TestSameNamespace_UpdateProcessorToARC covers the whole path that same() relies on.  The ARC
+// expands same() by replacing the update processor's placeholder string, so the placeholder must
+// reach the ARC byte-for-byte, after serialisation (as through Typha) and Felix's validation.  If
+// it doesn't, the replacement silently does nothing: allow rules match nothing and, worse, deny
+// rules never match.
+func TestSameNamespace_UpdateProcessorToARC(t *testing.T) {
+	gnp := v3.NewGlobalNetworkPolicy()
+	gnp.Name = sameNSTestPolicyKey.Name
+	gnp.Spec.Selector = "has(app)"
+	gnp.Spec.Ingress = []v3.Rule{
+		{
+			Action: v3.Allow,
+			Source: v3.EntityRule{NamespaceSelector: v3.SameNamespaceSelector, Selector: "app == 'x'"},
+		},
+		{
+			// Service account names go through a parse/re-serialise step in the update processor.
+			Action: v3.Allow,
+			Source: v3.EntityRule{
+				NamespaceSelector: v3.SameNamespaceSelector,
+				ServiceAccounts:   &v3.ServiceAccountMatch{Names: []string{"sa1"}},
+			},
+		},
+	}
+	gnp.Spec.Egress = []v3.Rule{
+		{Action: v3.Deny, Destination: v3.EntityRule{NamespaceSelector: v3.SameNamespaceSelector}},
+	}
+
+	v1Value, err := updateprocessors.ConvertGlobalNetworkPolicyV3ToV1Value(gnp)
+	if err != nil {
+		t.Fatalf("update processor failed: %v", err)
+	}
+	raw, err := model.SerializeValue(&model.KVPair{Key: sameNSTestPolicyKey, Value: v1Value})
+	if err != nil {
+		t.Fatalf("failed to serialise policy: %v", err)
+	}
+	parsed, err := model.ParseValue(sameNSTestPolicyKey, raw)
+	if err != nil {
+		t.Fatalf("failed to parse policy: %v", err)
+	}
+	policy := parsed.(*model.Policy)
+	// Felix's validation filter treats a policy that fails v1 validation as deleted.
+	if err := v1v.Validate(*policy); err != nil {
+		t.Fatalf("policy failed Felix validation: %v", err)
+	}
+
+	arc, scanner, _ := createSameNSARC()
+	updatePolicy(arc, sameNSTestPolicyKey, policy)
+	expectActiveKeys(t, scanner, sameNSTestPolicyKey,
+		virtualPolicyKey(sameNSTestPolicyKey, "ns1"), virtualPolicyKey(sameNSTestPolicyKey, "ns2"))
+
+	nsLabels := func(ns string, extra ...string) map[string]string {
+		l := map[string]string{v3.LabelNamespace: ns}
+		for i := 0; i < len(extra); i += 2 {
+			l[extra[i]] = extra[i+1]
+		}
+		return l
+	}
+	hostEndpointLabels := map[string]string{"app": "x"}
+
+	ns1Copy := scanner.activePolicies[virtualPolicyKey(sameNSTestPolicyKey, "ns1")]
+	parentCopy := scanner.activePolicies[sameNSTestPolicyKey]
+	for _, tc := range []struct {
+		name        string
+		ns1Sel      string
+		parentSel   string
+		shouldMatch map[string]string
+		shouldNot   []map[string]string
+	}{
+		{
+			name:        "ingress selector",
+			ns1Sel:      ns1Copy.InboundRules[0].SrcSelector,
+			parentSel:   parentCopy.InboundRules[0].SrcSelector,
+			shouldMatch: nsLabels("ns1", "app", "x"),
+			shouldNot:   []map[string]string{nsLabels("ns2", "app", "x"), nsLabels("ns1", "app", "y")},
+		},
+		{
+			name:        "ingress service account",
+			ns1Sel:      ns1Copy.InboundRules[1].SrcSelector,
+			parentSel:   parentCopy.InboundRules[1].SrcSelector,
+			shouldMatch: nsLabels("ns1", v3.LabelServiceAccount, "sa1"),
+			shouldNot:   []map[string]string{nsLabels("ns2", v3.LabelServiceAccount, "sa1"), nsLabels("ns1")},
+		},
+		{
+			name:        "egress deny",
+			ns1Sel:      ns1Copy.OutboundRules[0].DstSelector,
+			parentSel:   parentCopy.OutboundRules[0].DstSelector,
+			shouldMatch: nsLabels("ns1"),
+			shouldNot:   []map[string]string{nsLabels("ns2"), hostEndpointLabels},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if strings.Contains(tc.ns1Sel, updateprocessors.SameNamespacePlaceholder) {
+				t.Fatalf("placeholder not replaced in ns1 copy: %q", tc.ns1Sel)
+			}
+			sel, err := selector.Parse(tc.ns1Sel)
+			if err != nil {
+				t.Fatalf("failed to parse ns1 copy selector %q: %v", tc.ns1Sel, err)
+			}
+			if !sel.Evaluate(tc.shouldMatch) {
+				t.Errorf("ns1 copy selector %q should match %v", tc.ns1Sel, tc.shouldMatch)
+			}
+			for _, l := range tc.shouldNot {
+				if sel.Evaluate(l) {
+					t.Errorf("ns1 copy selector %q should not match %v", tc.ns1Sel, l)
+				}
+			}
+
+			// The unexpanded policy used for host endpoints must match nothing.
+			parentSel, err := selector.Parse(tc.parentSel)
+			if err != nil {
+				t.Fatalf("failed to parse unexpanded selector %q: %v", tc.parentSel, err)
+			}
+			if parentSel.Evaluate(tc.shouldMatch) {
+				t.Errorf("unexpanded selector %q should not match %v", tc.parentSel, tc.shouldMatch)
+			}
+		})
 	}
 }
 
