@@ -70,7 +70,11 @@ var (
 	maxNumConnections = resource.MustParse(strconv.FormatUint(math.MaxUint32, 10))
 )
 
-type defaultWorkloadEndpointConverter struct{}
+type defaultWorkloadEndpointConverter struct {
+	// disableServiceAccountProfiles suppresses the "ksa.*" ServiceAccount profile from the
+	// WorkloadEndpoint's profile IDs.  See EnvDisableServiceAccountProfiles.
+	disableServiceAccountProfiles bool
+}
 
 // VethNameForWorkload returns a deterministic veth name
 // for the given Kubernetes workload (WEP) name and namespace.
@@ -113,8 +117,10 @@ func (wc defaultWorkloadEndpointConverter) podToDefaultWorkloadEndpoint(pod *kap
 	// Pull out the Namespace based profile off the pod name and Namespace.
 	profiles = append(profiles, NamespaceProfileNamePrefix+pod.Namespace)
 
-	// Pull out the Serviceaccount based profile off the pod SA and namespace
-	if pod.Spec.ServiceAccountName != "" {
+	// Pull out the Serviceaccount based profile off the pod SA and namespace.  Skipped when
+	// ServiceAccount profiles are disabled: they won't exist, and felix would otherwise program
+	// drop rules for the missing profile.
+	if pod.Spec.ServiceAccountName != "" && !wc.disableServiceAccountProfiles {
 		profiles = append(profiles, serviceAccountNameToProfileName(pod.Spec.ServiceAccountName, pod.Namespace))
 	}
 

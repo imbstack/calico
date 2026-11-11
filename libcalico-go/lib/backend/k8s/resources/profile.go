@@ -39,8 +39,9 @@ import (
 
 func NewProfileClient(c kubernetes.Interface) K8sResourceClient {
 	return &profileClient{
-		clientSet: c,
-		Converter: conversion.NewConverter(),
+		clientSet:                     c,
+		Converter:                     conversion.NewConverter(),
+		disableServiceAccountProfiles: conversion.ServiceAccountProfilesDisabled(),
 	}
 }
 
@@ -48,6 +49,10 @@ func NewProfileClient(c kubernetes.Interface) K8sResourceClient {
 type profileClient struct {
 	clientSet kubernetes.Interface
 	conversion.Converter
+
+	// disableServiceAccountProfiles stops ServiceAccounts being listed, watched or fetched as
+	// "ksa.*" profiles.  See conversion.EnvDisableServiceAccountProfiles.
+	disableServiceAccountProfiles bool
 }
 
 func (c *profileClient) Create(ctx context.Context, kvp *model.KVPair) (*model.KVPair, error) {
@@ -149,6 +154,12 @@ func (c *profileClient) Get(ctx context.Context, key model.Key, revision string)
 	case conversion.NamespaceProfileNamePrefix:
 		return c.getNamespace(ctx, rk, nsRev)
 	case conversion.ServiceAccountProfileNamePrefix:
+		if c.disableServiceAccountProfiles {
+			return nil, cerrors.ErrorResourceDoesNotExist{
+				Identifier: key,
+				Err:        errors.New("ServiceAccount profiles are disabled"),
+			}
+		}
 		return c.getServiceAccount(ctx, rk, saRev)
 	}
 
@@ -213,6 +224,10 @@ func (c *profileClient) List(ctx context.Context, list model.ListInterface, revi
 
 	// Enumerate matching service accounts, paginated.
 	listFunc = func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+		if c.disableServiceAccountProfiles {
+			// ServiceAccount profiles are disabled; don't hit the API server at all.
+			return &v1.ServiceAccountList{}, nil
+		}
 		if nsName != "" && saName == "" {
 			// We've been asked to list a particular namespace, skip
 			// listing service accounts.
@@ -299,6 +314,11 @@ func (c *profileClient) Watch(ctx context.Context, list model.ListInterface, opt
 			}
 			k8sOpts.FieldSelector = fields.OneTermEqualSelector("metadata.name", ns).String()
 		} else if strings.HasPrefix(rlo.Name, conversion.ServiceAccountProfileNamePrefix) {
+			if c.disableServiceAccountProfiles {
+				// ServiceAccount profiles are disabled, so the profile can never exist.
+				log.WithField("name", rlo.Name).Debug("ServiceAccount profiles disabled, creating a fake watch")
+				return newProfileWatcher(ctx, api.NewFake(), api.NewFake()), nil
+			}
 			watchNS = false
 			ns, sa, err = c.ProfileNameToServiceAccount(rlo.Name)
 			if err != nil {
@@ -308,6 +328,9 @@ func (c *profileClient) Watch(ctx context.Context, list model.ListInterface, opt
 		} else {
 			return nil, fmt.Errorf("Unsupported prefix for resource name: %s", rlo.Name)
 		}
+	}
+	if c.disableServiceAccountProfiles {
+		watchSA = false
 	}
 	nsRev, saRev, err := c.SplitProfileRevision(options.Revision)
 	if err != nil {

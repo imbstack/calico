@@ -28,5 +28,7 @@ type WorkloadEndpointConverter interface {
 }
 
 func NewWorkloadEndpointConverter() WorkloadEndpointConverter {
-	return &defaultWorkloadEndpointConverter{}
+	return &defaultWorkloadEndpointConverter{
+		disableServiceAccountProfiles: ServiceAccountProfilesDisabled(),
+	}
 }
