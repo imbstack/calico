@@ -66,13 +66,14 @@ func GetEntityRuleSelector(er *apiv3.EntityRule, ns string, direction string) st
 
 func getEndpointSelector(namespaceSelector, endpointSelector, serviceAccountSelector, notSelector, ns string, direction string) string {
 
-	var nsSelector, selector string
+	var nsSelector string
 
 	// Determine which namespaces are impacted by this entityRule.
 	if namespaceSelector == apiv3.SameNamespaceSelector {
 		// same() depends on the namespace of the endpoint that the policy is applied to, so it can't
-		// be resolved here.  Emit a placeholder that matches nothing; Felix replaces it with a
-		// concrete namespace match when it expands the policy per namespace.
+		// be resolved here.  Emit a placeholder that matches nothing; Felix re-composes the selector
+		// with a concrete namespace match (see SameNamespaceEntitySelector) when it expands the
+		// policy per namespace.
 		nsSelector = SameNamespacePlaceholderSelector
 	} else if namespaceSelector != "" {
 		// A namespace selector was given - the rule applies to all namespaces
@@ -94,6 +95,28 @@ func getEndpointSelector(namespaceSelector, endpointSelector, serviceAccountSele
 		nsSelector = fmt.Sprintf("%s == '%s'", apiv3.LabelNamespace, ns)
 	}
 
+	return composeEndpointSelector(nsSelector, namespaceSelector != "", endpointSelector, serviceAccountSelector, notSelector, ns, direction)
+}
+
+// SameNamespaceEntitySelector returns the combined selector for an entity rule whose
+// namespaceSelector is same(), resolved to the concrete namespace ns.  It takes the rule's
+// original (unconverted) selector and service account match, so that only the namespace term
+// introduced for same() is affected; any other occurrence of the placeholder text in the
+// user's own selector is left untouched.
+func SameNamespaceEntitySelector(endpointSelector string, saNames []string, saSelector string, ns string) string {
+	// An empty match yields an empty selector, matching GetEntityRuleSelector's handling of a nil
+	// ServiceAccounts field.
+	saSel := parseServiceAccounts(&apiv3.ServiceAccountMatch{Names: saNames, Selector: saSelector})
+	nsSelector := fmt.Sprintf("%s == '%s'", apiv3.LabelNamespace, ns)
+	// A same() namespaceSelector is always non-empty, so the namespace term is always applied and
+	// the notSelector doesn't affect the result.
+	return composeEndpointSelector(nsSelector, true, endpointSelector, saSel, "", "", "")
+}
+
+// composeEndpointSelector combines an already-converted namespace selector with the endpoint and
+// service account selectors of an entity rule.
+func composeEndpointSelector(nsSelector string, namespaceSelectorSet bool, endpointSelector, serviceAccountSelector, notSelector, ns, direction string) string {
+	var selector string
 	var selectors []string
 
 	if serviceAccountSelector != "" {
@@ -120,7 +143,7 @@ func getEndpointSelector(namespaceSelector, endpointSelector, serviceAccountSele
 	// This occurs when the selector (and/or SA Selector), NotSelector, or NamespaceSelector
 	// is provided and either this is a namespaced NetworkPolicy object, or a
 	// NamespaceSelector was defined.
-	if nsSelector != "" && (selector != "" || notSelector != "" || namespaceSelector != "") {
+	if nsSelector != "" && (selector != "" || notSelector != "" || namespaceSelectorSet) {
 		logCxt := log.WithFields(log.Fields{
 			"Namespace":         ns,
 			"Selector(s)":       selector,

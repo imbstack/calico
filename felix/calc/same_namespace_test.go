@@ -39,6 +39,7 @@ func sameNSPolicy() *model.Policy {
 			{
 				Action:                       "allow",
 				SrcSelector:                  "(" + sameNSPlaceholder + ") && (has(app))",
+				OriginalSrcSelector:          "has(app)",
 				OriginalSrcNamespaceSelector: v3.SameNamespaceSelector,
 			},
 			{
@@ -127,11 +128,69 @@ func TestExpandForNamespace(t *testing.T) {
 	}
 }
 
+// TestExpandForNamespace_OnlyRewritesSameTerm verifies that expansion only touches the namespace
+// term introduced for same().  A user-written selector that happens to match the placeholder
+// namespace must keep its meaning, whether it is in a non-same() rule, in the non-same() side of
+// a same() rule, in a NotSelector, or inside the same() rule's own endpoint selector.
+func TestExpandForNamespace_OnlyRewritesSameTerm(t *testing.T) {
+	gnp := v3.NewGlobalNetworkPolicy()
+	gnp.Name = "p"
+	gnp.Spec.Selector = "all()"
+	gnp.Spec.Ingress = []v3.Rule{
+		{
+			// same() rule whose own selector mentions the placeholder namespace.
+			Action: v3.Allow,
+			Source: v3.EntityRule{NamespaceSelector: v3.SameNamespaceSelector, Selector: sameNSPlaceholder},
+			// Destination side doesn't use same().
+			Destination: v3.EntityRule{Selector: sameNSPlaceholder, NotSelector: sameNSPlaceholder},
+		},
+		{
+			// A separate rule that doesn't use same() at all.
+			Action: v3.Deny,
+			Source: v3.EntityRule{Selector: sameNSPlaceholder, NotSelector: sameNSPlaceholder},
+		},
+	}
+	v1Value, err := updateprocessors.ConvertGlobalNetworkPolicyV3ToV1Value(gnp)
+	if err != nil {
+		t.Fatalf("update processor failed: %v", err)
+	}
+	policy := v1Value.(*model.Policy)
+	expanded := expandForNamespace(policy, "ns1")
+
+	r0, r1 := expanded.InboundRules[0], expanded.InboundRules[1]
+	if got, want := r0.SrcSelector, "(projectcalico.org/namespace == 'ns1') && ("+sameNSPlaceholder+")"; got != want {
+		t.Errorf("same() SrcSelector = %q, want %q", got, want)
+	}
+	for name, pair := range map[string][2]string{
+		"same() rule DstSelector":    {r0.DstSelector, policy.InboundRules[0].DstSelector},
+		"same() rule NotDstSelector": {r0.NotDstSelector, policy.InboundRules[0].NotDstSelector},
+		"other rule SrcSelector":     {r1.SrcSelector, policy.InboundRules[1].SrcSelector},
+		"other rule NotSrcSelector":  {r1.NotSrcSelector, policy.InboundRules[1].NotSrcSelector},
+	} {
+		if pair[0] != pair[1] {
+			t.Errorf("%s changed: got %q, want %q", name, pair[0], pair[1])
+		}
+		if !strings.Contains(pair[0], updateprocessors.SameNamespacePlaceholder) {
+			t.Errorf("%s lost the user's placeholder-namespace match: %q", name, pair[0])
+		}
+	}
+
+	// The ns1 copy of the same() rule must still require the user's selector, so it matches
+	// nothing in ns1.
+	sel, err := selector.Parse(r0.SrcSelector)
+	if err != nil {
+		t.Fatalf("failed to parse %q: %v", r0.SrcSelector, err)
+	}
+	if sel.Evaluate(map[string]string{v3.LabelNamespace: "ns1"}) {
+		t.Errorf("expanded selector %q should not match endpoints in ns1", r0.SrcSelector)
+	}
+}
+
 // TestSameNamespace_UpdateProcessorToARC covers the whole path that same() relies on.  The ARC
-// expands same() by replacing the update processor's placeholder string, so the placeholder must
-// reach the ARC byte-for-byte, after serialisation (as through Typha) and Felix's validation.  If
-// it doesn't, the replacement silently does nothing: allow rules match nothing and, worse, deny
-// rules never match.
+// re-composes same() selectors from the rule's Original* fields, so those must survive
+// serialisation (as through Typha) and Felix's validation, and re-composition must agree with the
+// update processor's own composition.  If it doesn't, allow rules match the wrong endpoints and,
+// worse, deny rules may not match.
 func TestSameNamespace_UpdateProcessorToARC(t *testing.T) {
 	gnp := v3.NewGlobalNetworkPolicy()
 	gnp.Name = sameNSTestPolicyKey.Name
@@ -218,6 +277,11 @@ func TestSameNamespace_UpdateProcessorToARC(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// Re-composing with the placeholder namespace must reproduce the update processor's
+			// selector exactly, i.e. the two compositions agree.
+			if got := strings.ReplaceAll(tc.ns1Sel, "'ns1'", "'"+updateprocessors.SameNamespacePlaceholder+"'"); got != tc.parentSel {
+				t.Errorf("re-composed selector %q doesn't match update processor's %q", tc.ns1Sel, tc.parentSel)
+			}
 			if strings.Contains(tc.ns1Sel, updateprocessors.SameNamespacePlaceholder) {
 				t.Fatalf("placeholder not replaced in ns1 copy: %q", tc.ns1Sel)
 			}

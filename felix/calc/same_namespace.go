@@ -15,9 +15,6 @@
 package calc
 
 import (
-	"fmt"
-	"strings"
-
 	v3 "github.com/projectcalico/api/pkg/apis/projectcalico/v3"
 
 	"github.com/projectcalico/calico/libcalico-go/lib/backend/model"
@@ -29,7 +26,8 @@ import (
 // The update processor converts same() into a placeholder selector that matches nothing (see
 // updateprocessors.SameNamespacePlaceholderSelector).  When a same() policy matches a local workload
 // endpoint in namespace N, the ActiveRulesCalculator tracks the match under a "virtual" policy key
-// for (policy, N) and activates a copy of the policy with the placeholder replaced by a match on N.
+// for (policy, N) and activates a copy of the policy in which each same() selector is re-composed
+// from the rule's original fields with a match on N in place of the placeholder.
 //
 // A virtual key is the parent's key with Namespace set to N.  Global policy kinds never have a
 // namespace, so virtual keys can't collide with real policies, and the parent is recovered by
@@ -97,13 +95,19 @@ func expandRulesForNamespace(rules []model.Rule, ns string) []model.Rule {
 	if rules == nil {
 		return nil
 	}
-	nsSelector := fmt.Sprintf("%s == '%s'", v3.LabelNamespace, ns)
 	out := make([]model.Rule, len(rules))
 	for i, r := range rules {
-		r.SrcSelector = strings.ReplaceAll(r.SrcSelector, updateprocessors.SameNamespacePlaceholderSelector, nsSelector)
-		r.DstSelector = strings.ReplaceAll(r.DstSelector, updateprocessors.SameNamespacePlaceholderSelector, nsSelector)
-		r.NotSrcSelector = strings.ReplaceAll(r.NotSrcSelector, updateprocessors.SameNamespacePlaceholderSelector, nsSelector)
-		r.NotDstSelector = strings.ReplaceAll(r.NotDstSelector, updateprocessors.SameNamespacePlaceholderSelector, nsSelector)
+		// Re-compose only the selectors whose namespaceSelector was same(), from the rule's original
+		// fields.  Text substitution on the combined selectors would also rewrite any user-written
+		// match on the placeholder namespace, in this rule or in rules that don't use same().
+		if r.OriginalSrcNamespaceSelector == v3.SameNamespaceSelector {
+			r.SrcSelector = updateprocessors.SameNamespaceEntitySelector(
+				r.OriginalSrcSelector, r.OriginalSrcServiceAccountNames, r.OriginalSrcServiceAccountSelector, ns)
+		}
+		if r.OriginalDstNamespaceSelector == v3.SameNamespaceSelector {
+			r.DstSelector = updateprocessors.SameNamespaceEntitySelector(
+				r.OriginalDstSelector, r.OriginalDstServiceAccountNames, r.OriginalDstServiceAccountSelector, ns)
+		}
 		out[i] = r
 	}
 	return out
